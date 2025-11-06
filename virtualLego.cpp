@@ -23,6 +23,12 @@ IDirect3DDevice9* Device = NULL;
 const int Width  = 1024;
 const int Height = 768;
 
+// Global Variable By Us
+bool isGameStarted = false;
+int isWhiteTurn = 1; // 하얀공부터 시작하는 걸로
+int whiteScore = 0;
+int yellowScore = 0;
+
 // There are four balls
 // initialize the position (coordinate) of each ball (ball0 ~ ball3)
 const float spherePos[4][2] = { {-2.7f,0} , {+2.4f,0} , {3.3f,0} , {-2.7f,-0.9f}}; 
@@ -51,6 +57,7 @@ private :
     float                   m_radius;
 	float					m_velocity_x;
 	float					m_velocity_z;
+	bool hitByRed1, hitByRed2, hitByOther;
 
 public:
     CSphere(void)
@@ -169,6 +176,10 @@ public:
         D3DXVECTOR3 org(center_x, center_y, center_z);
         return org;
     }
+
+	int getScore() {
+
+	}
 	
 private:
     D3DXMATRIX              m_mLocal;
