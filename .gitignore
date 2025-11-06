@@ -1,0 +1,21 @@
+# Build results
+bin/
+obj/
+
+# Visual Studio user-specific files
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Auto-generated files
+*.log
+*.vsidx
+*.vscode/
+*.cache/
+*.tmp
+
+# Others
+_ReSharper*/
+[Tt]est[Rr]esult*/
