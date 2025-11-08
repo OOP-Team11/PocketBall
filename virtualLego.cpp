@@ -108,14 +108,61 @@ public:
 	
     bool hasIntersected(CSphere& ball) 
 	{
-		// Insert your code here.
+		D3DXVECTOR3 c1 = this->getCenter();
+		D3DXVECTOR3 c2 = ball.getCenter();
 
-		return false;
+		float dx = c1.x - c2.x;
+		float dz = c1.z - c2.z;
+
+		float distance = sqrt(dx * dx + dz * dz);
+		float radiusSum = this->getRadius() + ball.getRadius();
+
+		return distance <= radiusSum;
 	}
 	
 	void hitBy(CSphere& ball) 
 	{ 
-		// Insert your code here.
+        if (!hasIntersected(ball)) return;
+
+        // 중심 벡터 및 거리
+        D3DXVECTOR3 c1 = this->getCenter();
+        D3DXVECTOR3 c2 = ball.getCenter();
+        D3DXVECTOR3 n = c1 - c2;  // 충돌 방향
+        D3DXVec3Normalize(&n, &n);
+
+        // 상대 속도
+        D3DXVECTOR3 v1(this->getVelocity_X(), 0, this->getVelocity_Z());
+        D3DXVECTOR3 v2(ball.getVelocity_X(), 0, ball.getVelocity_Z());
+        D3DXVECTOR3 relVel = v1 - v2;
+
+        // 두 공이 서로 멀어지는 중이면 무시
+        if (D3DXVec3Dot(&relVel, &n) > 0)
+            return;
+
+        // 반사계수 e = 1 (완전탄성)
+        float e = 1.0f;
+
+        // 질량이 같을 때 단순화된 속도 교환 공식
+        float v1n = D3DXVec3Dot(&v1, &n);
+        float v2n = D3DXVec3Dot(&v2, &n);
+
+        float p = (v1n - v2n);
+
+        v1 -= n * p;
+        v2 += n * p;
+
+        this->setPower(v1.x, v1.z);
+        ball.setPower(v2.x, v2.z);
+
+        // --- 살짝 겹쳐진 공 위치 보정 (안 겹치게 밀기) ---
+        float dist = D3DXVec3Length(&(c1 - c2));
+        float overlap = (this->getRadius() + ball.getRadius() - dist) * 0.5f;
+        if (overlap > 0)
+        {
+            D3DXVECTOR3 correction = n * overlap;
+            this->setCenter(c1.x + correction.x, c1.y, c1.z + correction.z);
+            ball.setCenter(c2.x - correction.x, c2.y, c2.z - correction.z);
+        }
 	}
 
 	void ballUpdate(float timeDiff) 
@@ -252,13 +299,46 @@ public:
 	
 	bool hasIntersected(CSphere& ball) 
 	{
-		// Insert your code here.
-		return false;
+        D3DXVECTOR3 center = ball.getCenter();
+        float r = ball.getRadius();
+
+        // 예시: 위쪽 벽 (z가 +3 근처)
+        if (fabs(m_z) > 0 && m_z > 0) { // 위쪽 벽이라면
+            if (center.z + r >= m_z - (m_depth / 2))
+                return true;
+        }
+        // 아래쪽 벽
+        else if (fabs(m_z) > 0 && m_z < 0) {
+            if (center.z - r <= m_z + (m_depth / 2))
+                return true;
+        }
+        // 오른쪽 벽
+        else if (fabs(m_x) > 0 && m_x > 0) {
+            if (center.x + r >= m_x - (m_width / 2))
+                return true;
+        }
+        // 왼쪽 벽
+        else if (fabs(m_x) > 0 && m_x < 0) {
+            if (center.x - r <= m_x + (m_width / 2))
+                return true;
+        }
+
+        return false;
 	}
 
 	void hitBy(CSphere& ball) 
 	{
-		// Insert your code here.
+        if (!hasIntersected(ball)) return;
+
+        // 공의 현재 속도
+        double vx = ball.getVelocity_X();
+        double vz = ball.getVelocity_Z();
+
+        // 벽이 어느 방향에 있는가에 따라 반사
+        if (fabs(m_z) > 0)  // 위/아래 벽
+            ball.setPower(vx, -vz);
+        else if (fabs(m_x) > 0) // 좌/우 벽
+            ball.setPower(-vx, vz);
 	}    
 	
 	void setPosition(float x, float y, float z)
