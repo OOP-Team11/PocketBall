@@ -318,10 +318,6 @@ public:
         default:
             break;
         }
-        // 점수가 0 이하인 경우 턴 토글
-        if (total_score <= 0) {
-            isWhiteTurn = -isWhiteTurn;  
-        }
 
         return total_score;
     }
