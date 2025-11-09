@@ -17,6 +17,9 @@
 #include <cstdio>
 #include <cassert>
 
+// 디버깅 시 해제해 주세요
+// #include <iostream>
+
 IDirect3DDevice9* Device = NULL;
 
 // window size
@@ -62,9 +65,10 @@ private :
     float                   m_radius;
 	float					m_velocity_x;
 	float					m_velocity_z;
-	bool hit[4];
+	
 
 public:
+    bool hit[4];
     CSphere(void)
     {
         D3DXMatrixIdentity(&m_mLocal);
@@ -121,6 +125,8 @@ public:
 
 		float distance = sqrt(dx * dx + dz * dz);
 		float radiusSum = this->getRadius() + ball.getRadius();
+
+        
 
         // 충돌 시 변수 업데이트
         // 상대 ball 도 바꿔야 함.
@@ -214,14 +220,14 @@ public:
 
 			//correction of position of ball
 			// Please uncomment this part because this correction of ball position is necessary when a ball collides with a wall
-			/*if(tX >= (4.5 - M_RADIUS))
+			if(tX >= (4.5 - M_RADIUS))
 				tX = 4.5 - M_RADIUS;
 			else if(tX <=(-4.5 + M_RADIUS))
 				tX = -4.5 + M_RADIUS;
 			else if(tZ <= (-3 + M_RADIUS))
 				tZ = -3 + M_RADIUS;
 			else if(tZ >= (3 - M_RADIUS))
-				tZ = 3 - M_RADIUS;*/
+				tZ = 3 - M_RADIUS;
 			
 			this->setCenter(tX, cord.y, tZ);
 		}
@@ -259,9 +265,66 @@ public:
         return org;
     }
 
-	int getScore() {
+    /*
+    공별로 점수를 계산하는 함수. 실행 시에는 흰 공(player 1)과 노란 공(player 2)만을 대상으로 고려하면 됨.
+    Rule: 흰 공, 또는 노란 공이 1. 상대방의 공을 건드렸거나, 빨간 공을 하나도 못 쳤을 경우 -1점 2. NOT 1이면서 빨간 공을 한개만 친 경우 0점. 3. NOT 1이면서 빨간 공을 두개 모두 친 경우 +1점.
+    total_score>0일 시 턴 유지, 그렇지 않은 경우 턴 토글.
+    ball number 0: r, 1: r, 2: y, 3: w
+    */
+    int getScore() {
 
-	}
+        int total_score = 0;
+
+        switch (isWhiteTurn) {
+            // player 1's turn
+        case (1):
+            // case 1
+            if (this->hit[2] == true) {
+                total_score = -1;
+            }
+            else if (this->hit[0] == false && this->hit[1] == false) {
+                total_score = -1;
+            }
+            // case 2
+            else if((this->hit[0]==true && this->hit[1]==false) || (this->hit[1] == true && this->hit[0]==false)) {
+                total_score = 0;
+            }
+            // case 3
+            else if((this->hit[0]&&this->hit[1])==true) {
+                total_score = 1;
+            }
+                break;
+
+            // player 2's turn
+        case (-1):
+            // case 1
+            if (this->hit[3] == true) {
+                total_score = -1;
+            }
+            else if (this->hit[0] == false && this->hit[1] == false) {
+                total_score = -1;
+            }
+            // case 2
+            else if ((this->hit[0] == true && this->hit[1] == false) || (this->hit[1] == true && this->hit[0] == false)) {
+                total_score = 0;
+            }
+            // case 3
+            else if ((this->hit[0] && this->hit[1]) == true) {
+                total_score = 1;
+            }
+            break;
+
+            // unexpected value for isWhiteTurn.
+        default:
+            break;
+        }
+        // 점수가 0 이하인 경우 턴 토글
+        if (total_score <= 0) {
+            isWhiteTurn = -isWhiteTurn;  
+        }
+
+        return total_score;
+    }
 	
 private:
     D3DXMATRIX              m_mLocal;
@@ -608,7 +671,7 @@ bool Display(float timeDelta)   // 매 프레임 실행
 		// check whether any two balls hit together and update the direction of balls
 		for(i = 0 ;i < 4; i++){
 			for(j = 0 ; j < 4; j++) {
-				if(i >= j) {continue;}
+				if(i == j) {continue;}
 				g_sphere[i].hitBy(g_sphere[j]);
 			}
 		}
@@ -636,6 +699,9 @@ LRESULT CALLBACK d3d::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     static int old_x = 0;   // 이전 마우스 좌표 (마우스 이동량 계산용)
     static int old_y = 0;
     static enum { WORLD_MOVE, LIGHT_MOVE, BLOCK_MOVE } move = WORLD_MOVE;
+
+    // 디버깅용 로컬 변수
+    int score;
 	
 	switch( msg ) {
 	case WM_DESTROY:   // 창 닫힘 처리. (사용자가 창 닫을 때)
@@ -668,6 +734,26 @@ LRESULT CALLBACK d3d::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 				double distance = sqrt(pow(targetpos.x - whitepos.x, 2) + pow(targetpos.z - whitepos.z, 2));
 				g_sphere[3].setPower(distance * cos(theta), distance * sin(theta));
 
+                /*
+                // 혹시 충돌 로그 필요하시면 주석 해제해주세요
+
+                std::cout << "White hit: ";
+                for (int i = 0; i < 4; i++) std::cout << g_sphere[3].hit[i] << " ";
+                std::cout << std::endl;
+
+                std::cout<<"turn: "<< isWhiteTurn<<"score: "<< score<<"\n";
+                */
+                
+                // 흰 공 턴
+                if (isWhiteTurn == 1) score = g_sphere[3].getScore();
+                // 노란 공 턴
+                else score = g_sphere[2].getScore();
+                // 스페이스바가 눌릴 때마다 각 공의 hit초기화
+                for (int i = 0; i < 4; i++) {
+                    for (int j = 0; j < 4; j++) {
+                        g_sphere[i].hit[j] = false;
+                    }
+                }
 				break;
 
 			}
@@ -734,6 +820,19 @@ int WINAPI WinMain(HINSTANCE hinstance,
 				   PSTR cmdLine,
 				   int showCmd)
 {
+    // 디버깅용 콘솔이 필요하시면 주석 해제해 주세요
+    /*
+    AllocConsole();
+
+    FILE* stream;
+    freopen_s(&stream, "CONOUT$", "w", stdout); 
+    freopen_s(&stream, "CONIN$", "r", stdin);   
+
+    std::cout << "=== Console Initialized ===" << std::endl;
+
+    // 디버깅용 콘솔 생성 종료
+    */
+
     srand(static_cast<unsigned int>(time(NULL)));
 
     gs = g_sphere; // 배열 가리킴.
