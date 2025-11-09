@@ -65,10 +65,10 @@ private :
     float                   m_radius;
 	float					m_velocity_x;
 	float					m_velocity_z;
-	
+    bool                    hit[4];
 
 public:
-    bool hit[4];
+    
     CSphere(void)
     {
         D3DXMatrixIdentity(&m_mLocal);
@@ -324,6 +324,11 @@ public:
         }
 
         return total_score;
+    }
+    void hit_initialize() {
+        for (int i = 0; i < 4; i++) {
+            hit[i] = false;
+        }
     }
 	
 private:
@@ -671,7 +676,7 @@ bool Display(float timeDelta)   // 매 프레임 실행
 		// check whether any two balls hit together and update the direction of balls
 		for(i = 0 ;i < 4; i++){
 			for(j = 0 ; j < 4; j++) {
-				if(i == j) {continue;}
+				if(i >= j) {continue;}
 				g_sphere[i].hitBy(g_sphere[j]);
 			}
 		}
@@ -750,9 +755,7 @@ LRESULT CALLBACK d3d::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 else score = g_sphere[2].getScore();
                 // 스페이스바가 눌릴 때마다 각 공의 hit초기화
                 for (int i = 0; i < 4; i++) {
-                    for (int j = 0; j < 4; j++) {
-                        g_sphere[i].hit[j] = false;
-                    }
+                    g_sphere[i].hit_initialize();
                 }
 				break;
 
