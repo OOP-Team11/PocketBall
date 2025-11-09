@@ -23,11 +23,16 @@ IDirect3DDevice9* Device = NULL;
 const int Width  = 1024;
 const int Height = 768;
 
+// forward declaration for CSphere
+class CSphere;
+
 // Global Variable By Us
 bool isGameStarted = false;
 int isWhiteTurn = 1; // 하얀공부터 시작하는 걸로
 int whiteScore = 0;
 int yellowScore = 0;
+
+CSphere* gs; // 포인터 선언만 가능 -> 이후에 g_sphere 배열 가리킬 예정.
 
 // There are four balls
 // initialize the position (coordinate) of each ball (ball0 ~ ball3)
@@ -57,7 +62,7 @@ private :
     float                   m_radius;
 	float					m_velocity_x;
 	float					m_velocity_z;
-	bool hitByRed1, hitByRed2, hitByOther;
+	bool hit[4];
 
 public:
     CSphere(void)
@@ -116,6 +121,36 @@ public:
 
 		float distance = sqrt(dx * dx + dz * dz);
 		float radiusSum = this->getRadius() + ball.getRadius();
+
+        // 충돌 시 변수 업데이트
+        // 상대 ball 도 바꿔야 함.
+        if (distance <= radiusSum) {
+            if (this == &(gs[0])) {
+                ball.hit[0] = true;
+            }
+            else if (this == &(gs[1])) {
+                ball.hit[1] = true;
+            }
+            else if (this == &(gs[2])) {
+                ball.hit[2] = true;
+            }
+            else if (this == &(gs[3])) {
+                ball.hit[3] = true;
+            }
+
+            if (&ball == &(gs[0])) {
+                this->hit[0] = true; //Red1
+            }
+            else if (&ball == &(gs[1])) {
+                this->hit[1] = true; //Red2
+            }
+            else if (&ball == &(gs[2])) {
+                this->hit[2] = true; //Yellow
+            }
+            else if (&ball == &(gs[3])) {
+                this->hit[3] = true; //White
+            }
+        }
 
 		return distance <= radiusSum;
 	}
@@ -700,6 +735,8 @@ int WINAPI WinMain(HINSTANCE hinstance,
 				   int showCmd)
 {
     srand(static_cast<unsigned int>(time(NULL)));
+
+    gs = g_sphere; // 배열 가리킴.
 	
 	if(!d3d::InitD3D(hinstance,   // Direct3D 초기화
 		Width, Height, true, D3DDEVTYPE_HAL, &Device))
