@@ -21,6 +21,7 @@
 // #include <iostream>
 
 IDirect3DDevice9* Device = NULL;
+ID3DXFont* g_pFont = NULL; // 점수 표시용 폰트 객체 추가
 
 // window size
 const int Width = 1024;
@@ -615,8 +616,38 @@ bool Setup()
     lit.Attenuation0 = 0.0f;
     lit.Attenuation1 = 0.9f;
     lit.Attenuation2 = 0.0f;
+    /*lit.Type = D3DLIGHT_SPOT;
+    lit.Diffuse = D3DXCOLOR(1.0f, 0.95f, 0.8f, 1.0f);
+    lit.Specular = D3DXCOLOR(1.0f, 0.9f, 0.7f, 1.0f);
+    lit.Ambient = D3DXCOLOR(0.3f, 0.25f, 0.2f, 1.0f);
+    lit.Position = D3DXVECTOR3(0.0f, 5.0f, -2.0f);
+    lit.Direction = D3DXVECTOR3(0.0f, -1.0f, 0.3f);
+    lit.Range = 30.0f;
+    lit.Falloff = 1.0f;
+    lit.Attenuation0 = 0.5f;
+    lit.Attenuation1 = 0.05f;
+    lit.Theta = D3DXToRadian(25.0f);
+    lit.Phi = D3DXToRadian(40.0f);*/
     if (false == g_light.create(Device, lit))
         return false;
+
+    // 폰트 생성
+    D3DXFONT_DESC fontDesc = {
+    22,                        // Height
+    0,                         // Width (0 = 자동)
+    FW_BOLD,                   // Weight
+    1,                         // MipLevels
+    FALSE,                     // Italic
+    DEFAULT_CHARSET,
+    OUT_DEFAULT_PRECIS,
+    DEFAULT_QUALITY,
+    DEFAULT_PITCH | FF_DONTCARE,
+    "Arial"                    // 폰트 이름
+    };
+
+    if (FAILED(D3DXCreateFontIndirect(Device, &fontDesc, &g_pFont))) {
+        return false;
+    }
 
     // Position and aim the camera. : 카메라 설정
     D3DXVECTOR3 pos(0.0f, 5.0f, -8.0f);
@@ -644,6 +675,10 @@ void Cleanup(void)
     g_legoPlane.destroy();
     for (int i = 0; i < 4; i++) {
         g_legowall[i].destroy();
+    }
+    if (g_pFont) { // 폰트 해제
+        g_pFont->Release();
+        g_pFont = NULL;
     }
     destroyAllLegoBlock();
     g_light.destroy();
@@ -722,7 +757,7 @@ bool Display(float timeDelta)   // 매 프레임 실행
         }
 
         // 모든 공이 멈췄으면 점수 계산
-        if (allStopped && isGameStarted) {
+        if (allStopped && isGameStarted) { // isTurnStarted
             if (isWhiteTurn == 1)
                 updateScore(g_sphere[3]);  // white
             else
@@ -738,6 +773,15 @@ bool Display(float timeDelta)   // 매 프레임 실행
         }
         g_target_blueball.draw(Device, g_mWorld);
         g_light.draw(Device);
+
+        // 점수 표시
+        if (g_pFont) {
+            RECT scoreRect;
+            SetRect(&scoreRect, 30, 30, 0, 0);
+            char text[128];
+            sprintf_s(text, "WHITE: %d    YELLOW: %d", whiteScore, yellowScore);
+            g_pFont->DrawTextA(NULL, text, -1, &scoreRect, DT_NOCLIP, D3DXCOLOR(1, 1, 1, 1));
+        }
 
         Device->EndScene();
         Device->Present(0, 0, 0, 0);
@@ -778,36 +822,39 @@ LRESULT CALLBACK d3d::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             break;
         case VK_SPACE:   // 핵심 조작 로직 : 파란공과 흰공 위치 이용해 발사 방향 계산
 
-            D3DXVECTOR3 targetpos = g_target_blueball.getCenter();
-            D3DXVECTOR3	whitepos = g_sphere[3].getCenter();
-            double theta = acos(sqrt(pow(targetpos.x - whitepos.x, 2)) / sqrt(pow(targetpos.x - whitepos.x, 2) +
-                pow(targetpos.z - whitepos.z, 2)));		// 기본 1 사분면
-            if (targetpos.z - whitepos.z <= 0 && targetpos.x - whitepos.x >= 0) { theta = -theta; }	//4 사분면
-            if (targetpos.z - whitepos.z >= 0 && targetpos.x - whitepos.x <= 0) { theta = PI - theta; } //2 사분면
-            if (targetpos.z - whitepos.z <= 0 && targetpos.x - whitepos.x <= 0) { theta = PI + theta; } // 3 사분면
-            double distance = sqrt(pow(targetpos.x - whitepos.x, 2) + pow(targetpos.z - whitepos.z, 2));
-            g_sphere[3].setPower(distance * cos(theta), distance * sin(theta));
-
-            isGameStarted = true;
-            /*
-            // 혹시 충돌 로그 필요하시면 주석 해제해주세요
-
-            std::cout << "White hit: ";
-            for (int i = 0; i < 4; i++) std::cout << g_sphere[3].hit[i] << " ";
-            std::cout << std::endl;
-
-            std::cout<<"turn: "<< isWhiteTurn<<"score: "<< score<<"\n";
-            */
-
-            // 흰 공 턴
-            if (isWhiteTurn == 1) score = g_sphere[3].getScore();
-            // 노란 공 턴
-            else score = g_sphere[2].getScore();
-            // 스페이스바가 눌릴 때마다 각 공의 hit초기화
-            for (int i = 0; i < 4; i++) {
-                g_sphere[i].hit_initialize();
+            // white, yellow 바꾸기.
+            
+            D3DXVECTOR3 targetpos = g_target_blueball.getCenter(); // 이건 if 문에 포함 x
+            if (isWhiteTurn == 1) {
+                D3DXVECTOR3	whitepos = g_sphere[3].getCenter();
+                double theta = acos(sqrt(pow(targetpos.x - whitepos.x, 2)) / sqrt(pow(targetpos.x - whitepos.x, 2) +
+                    pow(targetpos.z - whitepos.z, 2)));		// 기본 1 사분면
+                if (targetpos.z - whitepos.z <= 0 && targetpos.x - whitepos.x >= 0) { theta = -theta; }	//4 사분면
+                if (targetpos.z - whitepos.z >= 0 && targetpos.x - whitepos.x <= 0) { theta = PI - theta; } //2 사분면
+                if (targetpos.z - whitepos.z <= 0 && targetpos.x - whitepos.x <= 0) { theta = PI + theta; } // 3 사분면
+                double distance = sqrt(pow(targetpos.x - whitepos.x, 2) + pow(targetpos.z - whitepos.z, 2));
+                g_sphere[3].setPower(distance * cos(theta), distance * sin(theta));
             }
-            break;
+            else if (isWhiteTurn == -1) {
+                D3DXVECTOR3	yellowpos = g_sphere[2].getCenter();
+                double theta = acos(sqrt(pow(targetpos.x - yellowpos.x, 2)) / sqrt(pow(targetpos.x - yellowpos.x, 2) +
+                    pow(targetpos.z - yellowpos.z, 2)));		// 기본 1 사분면
+                if (targetpos.z - yellowpos.z <= 0 && targetpos.x - yellowpos.x >= 0) { theta = -theta; }	//4 사분면
+                if (targetpos.z - yellowpos.z >= 0 && targetpos.x - yellowpos.x <= 0) { theta = PI - theta; } //2 사분면
+                if (targetpos.z - yellowpos.z <= 0 && targetpos.x - yellowpos.x <= 0) { theta = PI + theta; } // 3 사분면
+                double distance = sqrt(pow(targetpos.x - yellowpos.x, 2) + pow(targetpos.z - yellowpos.z, 2));
+                g_sphere[2].setPower(distance * cos(theta), distance * sin(theta));
+            }
+            else {
+                // 에러 처리
+            }
+
+            // 처음으로 눌렸을때 -> 게임 시작이니까 상태 변환
+            isGameStarted = true;
+
+            // 턴 체인지의 시작점. -> 취소
+            // updateScore(); -> 취소
+            
 
         }
         break;
