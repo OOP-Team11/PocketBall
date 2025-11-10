@@ -711,7 +711,7 @@ bool Display(float timeDelta)   // 매 프레임 실행
             }
         }
 
-        // 모든 공이 거의 멈췄는지 체크
+        // 3. 모든 공이 거의 멈췄는지 체크 (속도 매우 작음)
         bool allStopped = true;
         for (i = 0; i < 4; i++) {
             if (fabs(g_sphere[i].getVelocity_X()) > 0.01 ||
@@ -721,7 +721,7 @@ bool Display(float timeDelta)   // 매 프레임 실행
             }
         }
 
-        // 모든 공이 멈췄으면 점수 계산
+        // 4. 모든 공이 멈췄으면 점수 계산
         if (allStopped && isGameStarted) {
             if (isWhiteTurn == 1)
                 updateScore(g_sphere[3]);  // white
