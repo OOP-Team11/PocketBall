@@ -31,7 +31,7 @@ const int Height = 768;
 class CSphere;
 
 // Global Variable By Us
-bool isGameStarted = false;
+bool isTurnStarted = false;
 int isWhiteTurn = 1; // 하얀공부터 시작하는 걸로
 int whiteScore = 0;
 int yellowScore = 0;
@@ -40,7 +40,7 @@ CSphere* gs; // 포인터 선언만 가능 -> 이후에 g_sphere 배열 가리�
 
 // There are four balls
 // initialize the position (coordinate) of each ball (ball0 ~ ball3)
-const float spherePos[4][2] = { {-2.7f,0} , {+2.4f,0} , {3.3f,0} , {-2.7f,-0.9f} };
+const float spherePos[4][2] = { {-2.7f,0} , {+2.4f,0} , {-2.7f,-0.9f} , {3.3f, 0} };
 // initialize the color of each ball (ball0 ~ ball3)
 const D3DXCOLOR sphereColor[4] = { d3d::RED, d3d::RED, d3d::YELLOW, d3d::WHITE };
 
@@ -717,6 +717,10 @@ void updateScore(CSphere& ball) {
     default:
         break;
     }
+
+    for (int i = 0; i < 4; i++) {
+        g_sphere[i].hit_initialize();
+    }
 }
 
 // timeDelta represents the time between the current image frame and the last image frame.
@@ -749,20 +753,20 @@ bool Display(float timeDelta)   // 매 프레임 실행
         // 모든 공이 거의 멈췄는지 체크
         bool allStopped = true;
         for (i = 0; i < 4; i++) {
-            if (fabs(g_sphere[i].getVelocity_X()) > 0.01 ||
-                fabs(g_sphere[i].getVelocity_Z()) > 0.01) {
+            if (fabs(g_sphere[i].getVelocity_X()) > 0.03 ||
+                fabs(g_sphere[i].getVelocity_Z()) > 0.03) {
                 allStopped = false;
                 break;
             }
         }
 
         // 모든 공이 멈췄으면 점수 계산
-        if (allStopped && isGameStarted) { // isTurnStarted
+        if (allStopped && isTurnStarted) { // isTurnStarted
             if (isWhiteTurn == 1)
                 updateScore(g_sphere[3]);  // white
             else
                 updateScore(g_sphere[2]);  // yellow
-            isGameStarted = false; // 한 번만 계산되게
+            isTurnStarted = false; // 한 번만 계산되게
         }
 
         // draw plane, walls, and spheres
@@ -850,7 +854,7 @@ LRESULT CALLBACK d3d::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             }
 
             // 처음으로 눌렸을때 -> 게임 시작이니까 상태 변환
-            isGameStarted = true;
+            isTurnStarted = true;
 
             // 턴 체인지의 시작점. -> 취소
             // updateScore(); -> 취소
@@ -928,7 +932,7 @@ int WINAPI WinMain(HINSTANCE hinstance,
 
     FILE* stream;
     freopen_s(&stream, "CONOUT$", "w", stdout);
-    freopen_s(&stream, "CONIN$", "r", stdin);
+    freopen_s(&stream, "CONIN$", "r", stdin);ㅣ화기
 
     std::cout << "=== Console Initialized ===" << std::endl;
 
