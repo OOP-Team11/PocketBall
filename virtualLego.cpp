@@ -31,7 +31,6 @@ struct CUSTOMVERTEX {
 #define D3DFVF_CUSTOMVERTEX (D3DFVF_XYZ | D3DFVF_TEX1)
 
 // 배경 표시용 전역변수 추가
-IDirect3DVertexBuffer9* g_pVB_Background = NULL;
 IDirect3DTexture9* g_pBackgroundTex = NULL;
 const char* casino_image = "casino_image.png";
 const char* space_image = "space_image.jpg";
@@ -682,33 +681,6 @@ bool Setup()
         return false;
     }
 
-    // 배경용 정점 버퍼 생성 (두 개 삼각형으로 직사각형)
-    if (FAILED(Device->CreateVertexBuffer(6 * sizeof(CUSTOMVERTEX),
-        0, D3DFVF_CUSTOMVERTEX, D3DPOOL_MANAGED, &g_pVB_Background, NULL)))
-    {
-        return false;
-    }
-
-    // 배경 평면 정의
-    CUSTOMVERTEX* v;
-    g_pVB_Background->Lock(0, 0, (void**)&v, 0);
-
-    // Z축 뒤쪽 (-7.0f 정도) 위치에 가로 12, 세로 8 크기의 사각형을 만듦
-    float zPos = -7.0f;
-    float width = 12.0f;
-    float height = 8.0f;
-
-    v[0] = { -width / 2,  height / 2, zPos, 0.0f, 0.0f };
-    v[1] = { width / 2,  height / 2, zPos, 1.0f, 0.0f };
-    v[2] = { width / 2, -height / 2, zPos, 1.0f, 1.0f };
-    v[3] = { -width / 2,  height / 2, zPos, 0.0f, 0.0f };
-    v[4] = { width / 2, -height / 2, zPos, 1.0f, 1.0f };
-    v[5] = { -width / 2, -height / 2, zPos, 0.0f, 1.0f };
-
-    g_pVB_Background->Unlock();
-
-    // 배경 설정 종료
-
     // Set render states.
     Device->SetRenderState(D3DRS_LIGHTING, TRUE);
     Device->SetRenderState(D3DRS_SPECULARENABLE, TRUE);
@@ -729,10 +701,6 @@ void Cleanup(void)
         g_pFont = NULL;
     }
 
-    if (g_pVB_Background) {
-        g_pVB_Background->Release();
-        g_pVB_Background = NULL;
-    }
     if (g_pBackgroundTex) {
         g_pBackgroundTex->Release();
         g_pBackgroundTex = NULL;
