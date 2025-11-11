@@ -31,7 +31,7 @@ const int Height = 768;
 class CSphere;
 
 // Global Variable By Us
-bool isGameStarted = false;
+bool isTurnStarted = false;
 int isWhiteTurn = 1; // 하얀공부터 시작하는 걸로
 int whiteScore = 0;
 int yellowScore = 0;
@@ -40,7 +40,7 @@ CSphere* gs; // 포인터 선언만 가능 -> 이후에 g_sphere 배열 가리�
 
 // There are four balls
 // initialize the position (coordinate) of each ball (ball0 ~ ball3)
-const float spherePos[4][2] = { {-2.7f,0} , {+2.4f,0} , {3.3f,0} , {-2.7f,-0.9f} };
+const float spherePos[4][2] = { {-2.7f,0} , {+2.4f,0} , {-2.7f,-0.9f} , {3.3f, 0} };
 // initialize the color of each ball (ball0 ~ ball3)
 const D3DXCOLOR sphereColor[4] = { d3d::RED, d3d::RED, d3d::YELLOW, d3d::WHITE };
 
@@ -631,23 +631,24 @@ bool Setup()
     if (false == g_light.create(Device, lit))
         return false;
 
-    // 폰트 생성
+    // --- 점수판용 폰트 생성 (크고 가시성 좋은 폰트) ---
     D3DXFONT_DESC fontDesc = {
-    22,                        // Height
-    0,                         // Width (0 = 자동)
-    FW_BOLD,                   // Weight
-    1,                         // MipLevels
-    FALSE,                     // Italic
-    DEFAULT_CHARSET,
-    OUT_DEFAULT_PRECIS,
-    DEFAULT_QUALITY,
-    DEFAULT_PITCH | FF_DONTCARE,
-    "Arial"                    // 폰트 이름
+        38,                        // Height (글자 크기)
+        0,                         // Width (0이면 자동)
+        FW_HEAVY,                  // Weight (아주 굵게)
+        1,                         // MipLevels
+        FALSE,                     // Italic (기울임 없음)
+        DEFAULT_CHARSET,
+        OUT_TT_ONLY_PRECIS,        // TrueType 폰트 사용
+        ANTIALIASED_QUALITY,       // 부드러운 렌더링
+        DEFAULT_PITCH | FF_DONTCARE,
+        "Segoe UI Black"           // 폰트 이름 (두껍고 깔끔한 글꼴)
     };
 
     if (FAILED(D3DXCreateFontIndirect(Device, &fontDesc, &g_pFont))) {
         return false;
     }
+
 
     // Position and aim the camera. : 카메라 설정
     D3DXVECTOR3 pos(0.0f, 5.0f, -8.0f);
@@ -682,6 +683,7 @@ void Cleanup(void)
     }
     destroyAllLegoBlock();
     g_light.destroy();
+
 }
 
 void updateScore(CSphere& ball) {
@@ -717,6 +719,10 @@ void updateScore(CSphere& ball) {
     default:
         break;
     }
+
+    for (int i = 0; i < 4; i++) {
+        g_sphere[i].hit_initialize();
+    }
 }
 
 // timeDelta represents the time between the current image frame and the last image frame.
@@ -749,20 +755,20 @@ bool Display(float timeDelta)   // 매 프레임 실행
         // 모든 공이 거의 멈췄는지 체크
         bool allStopped = true;
         for (i = 0; i < 4; i++) {
-            if (fabs(g_sphere[i].getVelocity_X()) > 0.01 ||
-                fabs(g_sphere[i].getVelocity_Z()) > 0.01) {
+            if (fabs(g_sphere[i].getVelocity_X()) > 0.03 ||
+                fabs(g_sphere[i].getVelocity_Z()) > 0.03) {
                 allStopped = false;
                 break;
             }
         }
 
         // 모든 공이 멈췄으면 점수 계산
-        if (allStopped && isGameStarted) { // isTurnStarted
+        if (allStopped && isTurnStarted) { // isTurnStarted
             if (isWhiteTurn == 1)
                 updateScore(g_sphere[3]);  // white
             else
                 updateScore(g_sphere[2]);  // yellow
-            isGameStarted = false; // 한 번만 계산되게
+            isTurnStarted = false; // 한 번만 계산되게
         }
 
         // draw plane, walls, and spheres
@@ -774,14 +780,53 @@ bool Display(float timeDelta)   // 매 프레임 실행
         g_target_blueball.draw(Device, g_mWorld);
         g_light.draw(Device);
 
-        // 점수 표시
+        
+        // ==========================
+        // 점수판 및 턴 표시
+        // ==========================
         if (g_pFont) {
-            RECT scoreRect;
-            SetRect(&scoreRect, 30, 30, 0, 0);
-            char text[128];
-            sprintf_s(text, "WHITE: %d    YELLOW: %d", whiteScore, yellowScore);
-            g_pFont->DrawTextA(NULL, text, -1, &scoreRect, DT_NOCLIP, D3DXCOLOR(1, 1, 1, 1));
+            RECT rectWhite, rectYellow, rectTurn;
+
+            // 점수판 중앙 상단 위치
+            SetRect(&rectWhite, Width / 2 - 250, 40, 0, 0);
+            SetRect(&rectYellow, Width / 2 + 70, 40, 0, 0);
+            SetRect(&rectTurn, Width / 2 - 120, 100, 0, 0); // 턴 표시
+
+            // 점수 문자열
+            char whiteText[64], yellowText[64], turnText[64];
+            sprintf_s(whiteText, "WHITE: %d", whiteScore);
+            sprintf_s(yellowText, "YELLOW: %d", yellowScore);
+
+            // 턴 표시 문자열
+            if (isWhiteTurn == 1)
+                sprintf_s(turnText, "WHITE TURN !");
+            else
+                sprintf_s(turnText, "YELLOW TURN !");
+
+            // 그림자용 사각형 (글자 대비용)
+            RECT shadowWhite = rectWhite;
+            RECT shadowYellow = rectYellow;
+            RECT shadowTurn = rectTurn;
+            OffsetRect(&shadowWhite, 2, 2);
+            OffsetRect(&shadowYellow, 2, 2);
+            OffsetRect(&shadowTurn, 2, 2);
+
+            // --- 그림자 먼저 출력 ---
+            g_pFont->DrawTextA(NULL, whiteText, -1, &shadowWhite, DT_NOCLIP, D3DXCOLOR(0, 0, 0, 0.7f));
+            g_pFont->DrawTextA(NULL, yellowText, -1, &shadowYellow, DT_NOCLIP, D3DXCOLOR(0, 0, 0, 0.7f));
+            g_pFont->DrawTextA(NULL, turnText, -1, &shadowTurn, DT_NOCLIP, D3DXCOLOR(0, 0, 0, 0.7f));
+
+            // --- 본문 텍스트 출력 ---
+            g_pFont->DrawTextA(NULL, whiteText, -1, &rectWhite, DT_NOCLIP, D3DXCOLOR(0.4f, 0.8f, 1.0f, 1.0f));   // 밝은 파란색 (WHITE 팀)
+            g_pFont->DrawTextA(NULL, yellowText, -1, &rectYellow, DT_NOCLIP, D3DXCOLOR(1.0f, 0.9f, 0.3f, 1.0f)); // 금빛 노란색 (YELLOW 팀)
+
+            // 턴 표시 색상: 현재 턴에 따라 다르게 강조
+            if (isWhiteTurn == 1)
+                g_pFont->DrawTextA(NULL, turnText, -1, &rectTurn, DT_NOCLIP, D3DXCOLOR(0.5f, 0.8f, 1.0f, 1.0f)); // 하늘색 계열
+            else
+                g_pFont->DrawTextA(NULL, turnText, -1, &rectTurn, DT_NOCLIP, D3DXCOLOR(1.0f, 0.8f, 0.3f, 1.0f)); // 노란빛
         }
+
 
         Device->EndScene();
         Device->Present(0, 0, 0, 0);
@@ -823,7 +868,7 @@ LRESULT CALLBACK d3d::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         case VK_SPACE:   // 핵심 조작 로직 : 파란공과 흰공 위치 이용해 발사 방향 계산
 
             // white, yellow 바꾸기.
-            
+
             D3DXVECTOR3 targetpos = g_target_blueball.getCenter(); // 이건 if 문에 포함 x
             if (isWhiteTurn == 1) {
                 D3DXVECTOR3	whitepos = g_sphere[3].getCenter();
@@ -850,11 +895,11 @@ LRESULT CALLBACK d3d::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             }
 
             // 처음으로 눌렸을때 -> 게임 시작이니까 상태 변환
-            isGameStarted = true;
+            isTurnStarted = true;
 
             // 턴 체인지의 시작점. -> 취소
             // updateScore(); -> 취소
-            
+
 
         }
         break;
@@ -928,7 +973,7 @@ int WINAPI WinMain(HINSTANCE hinstance,
 
     FILE* stream;
     freopen_s(&stream, "CONOUT$", "w", stdout);
-    freopen_s(&stream, "CONIN$", "r", stdin);
+    freopen_s(&stream, "CONIN$", "r", stdin);ㅣ화기
 
     std::cout << "=== Console Initialized ===" << std::endl;
 
