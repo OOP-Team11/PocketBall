@@ -652,6 +652,23 @@ bool Setup()
         return false;
     }
 
+    // 승리 & 게임 종료 폰트 생성
+    D3DXFONT_DESC fontWin = {
+        50,
+        0,
+        FW_BOLD,
+        1,
+        FALSE,
+        DEFAULT_CHARSET,
+        OUT_DEFAULT_PRECIS,
+        DEFAULT_QUALITY,
+        DEFAULT_PITCH | FF_DONTCARE,
+        "Arial"                    // 폰트 이름
+    };
+    if (FAILED(D3DXCreateFontIndirect(Device, &fontWin, &win_Font))) {
+        return false;
+    }
+
 
     // Position and aim the camera. : 카메라 설정
     D3DXVECTOR3 pos(0.0f, 5.0f, -8.0f);
