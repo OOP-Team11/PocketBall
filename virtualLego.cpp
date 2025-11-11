@@ -21,6 +21,7 @@
 // #include <iostream>
 
 IDirect3DDevice9* Device = NULL;
+ID3DXFont* win_Font = NULL; // 승리 표시용 폰트 객체 추가
 ID3DXFont* g_pFont = NULL; // 점수 표시용 폰트 객체 추가
 
 // window size
@@ -35,6 +36,8 @@ bool isTurnStarted = false;
 int isWhiteTurn = 1; // 하얀공부터 시작하는 걸로
 int whiteScore = 0;
 int yellowScore = 0;
+int winScore = 1; // winScore 만큼 점수를 먼저 획득하는 사람이 승리.
+int winner = 0; //  yellow : 2, white = 3
 
 CSphere* gs; // 포인터 선언만 가능 -> 이후에 g_sphere 배열 가리킬 예정.
 
@@ -723,6 +726,15 @@ void updateScore(CSphere& ball) {
     for (int i = 0; i < 4; i++) {
         g_sphere[i].hit_initialize();
     }
+
+    // 승리 판별하기.
+    if (whiteScore >= winScore) {
+        winner = 3;
+    }
+    else if (yellowScore >= winScore) {
+        winner = 2;
+    }
+    // 판별해서 이긴쪽. 폰트 생성? -> display() 마다 보이도록
 }
 
 // timeDelta represents the time between the current image frame and the last image frame.
@@ -825,6 +837,28 @@ bool Display(float timeDelta)   // 매 프레임 실행
                 g_pFont->DrawTextA(NULL, turnText, -1, &rectTurn, DT_NOCLIP, D3DXCOLOR(0.5f, 0.8f, 1.0f, 1.0f)); // 하늘색 계열
             else
                 g_pFont->DrawTextA(NULL, turnText, -1, &rectTurn, DT_NOCLIP, D3DXCOLOR(1.0f, 0.8f, 0.3f, 1.0f)); // 노란빛
+        }
+
+        // 게임 종료 및 승자 표시
+        if (winner != 0) {
+            if (winner == 2) {
+                if (win_Font) {
+                    RECT winRect;
+                    SetRect(&winRect, 200, 300, 0, 0);
+                    char text[128];
+                    sprintf_s(text, "Game Over - Winner : %s", "yellow");
+                    win_Font->DrawTextA(NULL, text,-1, &winRect, DT_NOCLIP, D3DXCOLOR(1, 0, 0, 1));
+                }
+            }
+            else if (winner == 3) {
+                if (win_Font) {
+                    RECT winRect;
+                    SetRect(&winRect, 200, 300, 0, 0);
+                    char text[128];
+                    sprintf_s(text, "Game Over - Winner : %s", "white");
+                    win_Font->DrawTextA(NULL, text, -1, &winRect, DT_NOCLIP, D3DXCOLOR(1, 0, 0, 1));
+                }
+            }
         }
 
 
