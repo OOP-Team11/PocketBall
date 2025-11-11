@@ -40,7 +40,7 @@ CSphere* gs; // 포인터 선언만 가능 -> 이후에 g_sphere 배열 가리�
 
 // There are four balls
 // initialize the position (coordinate) of each ball (ball0 ~ ball3)
-const float spherePos[4][2] = { {-2.7f,0} , {+2.4f,0} , {3.3f,0} , {-2.7f,-0.9f} };
+const float spherePos[4][2] = { {-2.7f,0} , {+2.4f,0} , {-2.7f,-0.9f} , {3.3f, 0} };
 // initialize the color of each ball (ball0 ~ ball3)
 const D3DXCOLOR sphereColor[4] = { d3d::RED, d3d::RED, d3d::YELLOW, d3d::WHITE };
 
@@ -717,6 +717,10 @@ void updateScore(CSphere& ball) {
     default:
         break;
     }
+
+    for (int i = 0; i < 4; i++) {
+        g_sphere[i].hit_initialize();
+    }
 }
 
 // timeDelta represents the time between the current image frame and the last image frame.
@@ -928,7 +932,7 @@ int WINAPI WinMain(HINSTANCE hinstance,
 
     FILE* stream;
     freopen_s(&stream, "CONOUT$", "w", stdout);
-    freopen_s(&stream, "CONIN$", "r", stdin);
+    freopen_s(&stream, "CONIN$", "r", stdin);ㅣ화기
 
     std::cout << "=== Console Initialized ===" << std::endl;
 
