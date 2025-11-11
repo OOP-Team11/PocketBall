@@ -21,6 +21,7 @@
 // #include <iostream>
 
 IDirect3DDevice9* Device = NULL;
+ID3DXFont* win_Font = NULL; // 승리 표시용 폰트 객체 추가
 ID3DXFont* g_pFont = NULL; // 점수 표시용 폰트 객체 추가
 
 // window size
@@ -35,6 +36,8 @@ bool isGameStarted = false;
 int isWhiteTurn = 1; // 하얀공부터 시작하는 걸로
 int whiteScore = 0;
 int yellowScore = 0;
+int winScore = 1; // winScore 만큼 점수를 먼저 획득하는 사람이 승리.
+int winner = 0; //  yellow : 2, white = 3
 
 CSphere* gs; // 포인터 선언만 가능 -> 이후에 g_sphere 배열 가리킬 예정.
 
@@ -631,7 +634,7 @@ bool Setup()
     if (false == g_light.create(Device, lit))
         return false;
 
-    // 폰트 생성
+    // 점수판 폰트 생성
     D3DXFONT_DESC fontDesc = {
     22,                        // Height
     0,                         // Width (0 = 자동)
@@ -646,6 +649,23 @@ bool Setup()
     };
 
     if (FAILED(D3DXCreateFontIndirect(Device, &fontDesc, &g_pFont))) {
+        return false;
+    }
+
+    // 승리 & 게임 종료 폰트 생성
+    D3DXFONT_DESC fontWin = {
+        50,
+        0,
+        FW_BOLD,
+        1,
+        FALSE,
+        DEFAULT_CHARSET,
+        OUT_DEFAULT_PRECIS,
+        DEFAULT_QUALITY,
+        DEFAULT_PITCH | FF_DONTCARE,
+        "Arial"                    // 폰트 이름
+    };
+    if (FAILED(D3DXCreateFontIndirect(Device, &fontWin, &win_Font))) {
         return false;
     }
 
@@ -721,6 +741,15 @@ void updateScore(CSphere& ball) {
     for (int i = 0; i < 4; i++) {
         g_sphere[i].hit_initialize();
     }
+
+    // 승리 판별하기.
+    if (whiteScore >= winScore) {
+        winner = 3;
+    }
+    else if (yellowScore >= winScore) {
+        winner = 2;
+    }
+    // 판별해서 이긴쪽. 폰트 생성? -> display() 마다 보이도록
 }
 
 // timeDelta represents the time between the current image frame and the last image frame.
@@ -786,6 +815,29 @@ bool Display(float timeDelta)   // 매 프레임 실행
             sprintf_s(text, "WHITE: %d    YELLOW: %d", whiteScore, yellowScore);
             g_pFont->DrawTextA(NULL, text, -1, &scoreRect, DT_NOCLIP, D3DXCOLOR(1, 1, 1, 1));
         }
+
+        // 게임 종료 및 승자 표시
+        if (winner != 0) {
+            if (winner == 2) {
+                if (win_Font) {
+                    RECT winRect;
+                    SetRect(&winRect, 200, 300, 0, 0);
+                    char text[128];
+                    sprintf_s(text, "Game Over - Winner : %s", "yellow");
+                    win_Font->DrawTextA(NULL, text,-1, &winRect, DT_NOCLIP, D3DXCOLOR(1, 0, 0, 1));
+                }
+            }
+            else if (winner == 3) {
+                if (win_Font) {
+                    RECT winRect;
+                    SetRect(&winRect, 200, 300, 0, 0);
+                    char text[128];
+                    sprintf_s(text, "Game Over - Winner : %s", "white");
+                    win_Font->DrawTextA(NULL, text, -1, &winRect, DT_NOCLIP, D3DXCOLOR(1, 0, 0, 1));
+                }
+            }
+        }
+
 
         Device->EndScene();
         Device->Present(0, 0, 0, 0);
