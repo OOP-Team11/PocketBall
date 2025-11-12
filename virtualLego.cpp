@@ -46,11 +46,13 @@ class CSphere;
 
 // Global Variable By Us
 bool isTurnStarted = false;
-int isWhiteTurn = 1; // 하얀공부터 시작하는 걸로
+int isWhiteTurn = -1; // 하얀공부터 시작하는 걸로 -> 노란공부터 시작하는걸로
 int whiteScore = 0;
 int yellowScore = 0;
-int winScore = 1; // winScore 만큼 점수를 먼저 획득하는 사람이 승리.
+int winScore = 100; // winScore 만큼 점수를 먼저 획득하는 사람이 승리.
 int winner = 0; //  yellow : 2, white = 3
+
+bool isai = false;
 
 CSphere* gs; // 포인터 선언만 가능 -> 이후에 g_sphere 배열 가리킬 예정.
 CSphere* blue; // 선언 문제 -> g_sphere_blueball 가리킬 예정
@@ -674,6 +676,8 @@ void LoadQTable(std::vector<QEntry>& qTable) {
 
 // ai 발사 로직
 void AIFireYellowBall(std::vector<QEntry>& qTable) {
+    isai = false;
+    isTurnStarted = true;
     // 현재 게임판 상태
     State baseState = getCurrentState();
 
@@ -941,17 +945,17 @@ void updateScore(CSphere& ball) {
             isWhiteTurn = -isWhiteTurn; // turn change
         }
         break;
-        // 노란공 턴
+        // 노란공 턴 + turn change 제거
     case (-1):
         if (score == 1) {
             yellowScore += 1;
         }
         else if (score == -1) {
             yellowScore += -1;
-            isWhiteTurn = -isWhiteTurn; // turn change
+            //isWhiteTurn = -isWhiteTurn; // turn change
         }
         else if (score == 0) {
-            isWhiteTurn = -isWhiteTurn; // turn change
+            //isWhiteTurn = -isWhiteTurn; // turn change
         }
         break;
     default:
@@ -974,6 +978,7 @@ void updateScore(CSphere& ball) {
         winner = 2;
     }
     // 판별해서 이긴쪽. 폰트 생성? -> display() 마다 보이도록
+
 }
 
 // timeDelta represents the time between the current image frame and the last image frame.
@@ -1059,6 +1064,10 @@ bool Display(float timeDelta)   // 매 프레임 실행
             else
                 updateScore(g_sphere[2]);  // yellow
             isTurnStarted = false; // 한 번만 계산되게
+            isai = true;
+        }
+        if (allStopped && isWhiteTurn == -1 && isai == true && !isTurnStarted) {
+            AIFireYellowBall(QTable);
         }
 
         // draw plane, walls, and spheres
@@ -1180,7 +1189,7 @@ LRESULT CALLBACK d3d::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         case VK_SPACE:   // 핵심 조작 로직 : 파란공과 흰공 위치 이용해 발사 방향 계산
 
             // white, yellow 바꾸기.
-
+            /* 여기 루프문 제거하고 */
             D3DXVECTOR3 targetpos = g_target_blueball.getCenter(); // 이건 if 문에 포함 x
             if (isWhiteTurn == 1) {
                 D3DXVECTOR3	whitepos = g_sphere[3].getCenter();
