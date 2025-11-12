@@ -24,6 +24,19 @@ IDirect3DDevice9* Device = NULL;
 ID3DXFont* win_Font = NULL; // 승리 표시용 폰트 객체 추가
 ID3DXFont* g_pFont = NULL; // 점수 표시용 폰트 객체 추가
 
+// 배경 표시용 구조체 추가
+struct CUSTOMVERTEX {
+    float x, y, z;
+    float tu, tv;
+};
+#define D3DFVF_CUSTOMVERTEX (D3DFVF_XYZ | D3DFVF_TEX1)
+
+// 배경 표시용 전역변수 추가
+IDirect3DTexture9* g_pBackgroundTex = NULL;
+const char* casino_image = "casino_image.png";
+const char* space_image = "space_image.jpg";
+
+
 // window size
 const int Width = 1024;
 const int Height = 768;
@@ -652,6 +665,23 @@ bool Setup()
         return false;
     }
 
+    // 승리 & 게임 종료 폰트 생성
+    D3DXFONT_DESC fontWin = {
+        50,
+        0,
+        FW_BOLD,
+        1,
+        FALSE,
+        DEFAULT_CHARSET,
+        OUT_DEFAULT_PRECIS,
+        DEFAULT_QUALITY,
+        DEFAULT_PITCH | FF_DONTCARE,
+        "Arial"                    // 폰트 이름
+    };
+    if (FAILED(D3DXCreateFontIndirect(Device, &fontWin, &win_Font))) {
+        return false;
+    }
+
 
     // Position and aim the camera. : 카메라 설정
     D3DXVECTOR3 pos(0.0f, 5.0f, -8.0f);
@@ -664,6 +694,13 @@ bool Setup()
     D3DXMatrixPerspectiveFovLH(&g_mProj, D3DX_PI / 4,
         (float)Width / (float)Height, 1.0f, 100.0f);
     Device->SetTransform(D3DTS_PROJECTION, &g_mProj);
+
+    // 배경 설정 시작
+    // 배경 텍스처 로드
+    if (FAILED(D3DXCreateTextureFromFile(Device, space_image, &g_pBackgroundTex))) {
+        MessageBox(0, "Failed to load background texture!", 0, 0);
+        return false;
+    }
 
     // Set render states.
     Device->SetRenderState(D3DRS_LIGHTING, TRUE);
@@ -684,6 +721,12 @@ void Cleanup(void)
         g_pFont->Release();
         g_pFont = NULL;
     }
+
+    if (g_pBackgroundTex) {
+        g_pBackgroundTex->Release();
+        g_pBackgroundTex = NULL;
+    }
+
     destroyAllLegoBlock();
     g_light.destroy();
 
@@ -749,6 +792,45 @@ bool Display(float timeDelta)   // 매 프레임 실행
     {
         Device->Clear(0, 0, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, 0x00afafaf, 1.0f, 0);
         Device->BeginScene();
+
+        // 현재 뷰/투영 행렬 백업
+        D3DXMATRIX oldView, oldProj;
+        Device->GetTransform(D3DTS_VIEW, &oldView);
+        Device->GetTransform(D3DTS_PROJECTION, &oldProj);
+
+        // 직교 투영 행렬 설정 (2D 화면용)
+        D3DXMATRIX orthoProj, identity;
+        D3DXMatrixOrthoLH(&orthoProj, (float)Width, (float)Height, 0.0f, 1.0f);
+        D3DXMatrixIdentity(&identity);
+        Device->SetTransform(D3DTS_VIEW, &identity);
+        Device->SetTransform(D3DTS_PROJECTION, &orthoProj);
+
+        // 배경용 정점(화면 전체) 설정
+        CUSTOMVERTEX v[6] = {
+            { -Width / 2.0f,  Height / 2.0f, 0.0f, 0.0f, 0.0f },
+            {  Width / 2.0f,  Height / 2.0f, 0.0f, 1.0f, 0.0f },
+            {  Width / 2.0f, -Height / 2.0f, 0.0f, 1.0f, 1.0f },
+            { -Width / 2.0f,  Height / 2.0f, 0.0f, 0.0f, 0.0f },
+            {  Width / 2.0f, -Height / 2.0f, 0.0f, 1.0f, 1.0f },
+            { -Width / 2.0f, -Height / 2.0f, 0.0f, 0.0f, 1.0f },
+        };
+
+        // 조명/깊이 비활성화
+        Device->SetRenderState(D3DRS_LIGHTING, FALSE);
+        Device->SetRenderState(D3DRS_ZENABLE, FALSE);
+
+        // 텍스처 설정
+        Device->SetTexture(0, g_pBackgroundTex);
+        Device->SetFVF(D3DFVF_CUSTOMVERTEX);
+        Device->DrawPrimitiveUP(D3DPT_TRIANGLELIST, 2, v, sizeof(CUSTOMVERTEX));
+
+        // 복구
+        Device->SetRenderState(D3DRS_ZENABLE, TRUE);
+        Device->SetRenderState(D3DRS_LIGHTING, TRUE);
+        Device->SetTexture(0, NULL);
+        Device->SetTransform(D3DTS_VIEW, &oldView);
+        Device->SetTransform(D3DTS_PROJECTION, &oldProj);
+
 
         // update the position of each ball. during update, check whether each ball hit by walls.
         for (i = 0; i < 4; i++) {
