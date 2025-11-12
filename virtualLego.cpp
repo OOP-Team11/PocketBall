@@ -1091,7 +1091,7 @@ bool Display(float timeDelta)   // 매 프레임 실행
             if (isWhiteTurn == 1)
                 sprintf_s(turnText, "WHITE TURN !");
             else
-                sprintf_s(turnText, "YELLOW TURN !");
+                sprintf_s(turnText, "YELLOW TURN ! \n  (Press Space)");
 
             // 그림자용 사각형 (글자 대비용)
             RECT shadowWhite = rectWhite;
@@ -1257,11 +1257,14 @@ LRESULT CALLBACK d3d::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             isReset = true;
 
             if (LOWORD(wParam) & MK_RBUTTON) {
-                dx = (old_x - new_x);// * 0.01f;
-                dy = (old_y - new_y);// * 0.01f;
+                if (isWhiteTurn == 1) {
+                    dx = (old_x - new_x);// * 0.01f;
+                    dy = (old_y - new_y);// * 0.01f;
 
-                D3DXVECTOR3 coord3d = g_target_blueball.getCenter();
-                g_target_blueball.setCenter(coord3d.x + dx * (-0.007f), coord3d.y, coord3d.z + dy * 0.007f);
+                    D3DXVECTOR3 coord3d = g_target_blueball.getCenter();
+                    g_target_blueball.setCenter(coord3d.x + dx * (-0.007f), coord3d.y, coord3d.z + dy * 0.007f);
+                }
+                else; // player 2의 차례일 때에는 입력을 받지 않고 기다림.
             }
             old_x = new_x;
             old_y = new_y;
