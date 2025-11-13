@@ -50,6 +50,7 @@ int whiteScore = 0;
 int yellowScore = 0;
 
 CSphere* gs; // 포인터 선언만 가능 -> 이후에 g_sphere 배열 가리킬 예정.
+CSphere* blue; // 선언 문제 -> g_sphere_blueball 가리킬 예정
 
 // There are four balls
 // initialize the position (coordinate) of each ball (ball0 ~ ball3)
@@ -341,6 +342,10 @@ public:
         }
     }
 
+    bool* getHit() {
+        return hit;
+    }
+
 private:
     D3DXMATRIX              m_mLocal;
     D3DMATERIAL9            m_mtrl;
@@ -562,6 +567,191 @@ private:
     d3d::BoundingSphere m_bound;
 };
 
+// -----------------------------------------------------------------------------
+// Algorithms
+// -----------------------------------------------------------------------------
+
+// 상대 좌표 기반 상태
+struct State {
+    int dx1, dz1; // red1 - yellow 상대 위치
+    int dx2, dz2; // red2 - yellow 상대 위치
+    int dxw, dzw; // white - yellow 상대 위치
+    int tx, tz; // 파란공 - yellow 상대 위치
+};
+
+// Q-learning 용 엔트리
+struct QEntry {
+    State state;        // 상태
+    float totalReward;  // 누적 보상
+    int count;          // 시도 횟수
+    float avgReward;    // 평균 보상
+};
+
+// global variables for algorithms
+std::vector<QEntry> QTable;
+State lastState;
+
+// functions of algorithms
+int bin(float v, float step = 0.5f) {
+    // 0.5 단위로 좌표를 정수화
+    return int(v / step);
+}
+
+State getCurrentState() {   // 현재 상태 계산 함수
+    D3DXVECTOR3 red1 = gs[0].getCenter();
+    D3DXVECTOR3 red2 = gs[1].getCenter();
+    D3DXVECTOR3 white = gs[3].getCenter();
+    D3DXVECTOR3 yellow = gs[2].getCenter();
+    D3DXVECTOR3 target = blue->getCenter();
+
+    State s;
+    s.dx1 = bin(red1.x - yellow.x);
+    s.dz1 = bin(red1.z - yellow.z);
+    s.dx2 = bin(red2.x - yellow.x);
+    s.dz2 = bin(red2.z - yellow.z);
+    s.dxw = bin(white.x - yellow.x);
+    s.dzw = bin(white.z - yellow.z);
+    s.tx = bin(target.x - yellow.x);
+    s.tz = bin(target.z - yellow.z);
+    return s;
+}
+
+void UpdateQTable(std::vector<QEntry>& qTable, const State& s, float reward) {   // QTable 갱신 함수
+    for (auto& e : qTable) {
+        if (memcmp(&e.state, &s, sizeof(State)) == 0) {
+            // 기존 state 발견 → 업데이트
+            e.totalReward += reward;
+            e.count++;
+            e.avgReward = e.totalReward / e.count;
+            return;
+        }
+    }
+
+    // 새로운 state 추가
+    QEntry entry;
+    entry.state = s;
+    entry.totalReward = reward;
+    entry.count = 1;
+    entry.avgReward = reward;
+    qTable.push_back(entry);
+}
+
+// Parameter File Load/Save
+void SaveQTable(const std::vector<QEntry>& qTable) {
+    FILE* fp = fopen("ai_qtable.txt", "w");
+    if (!fp) return;
+    for (auto& e : qTable) {
+        fprintf(fp, "%d %d %d %d %d %d %d %d %f %d %f\n",
+            e.state.dx1, e.state.dz1,
+            e.state.dx2, e.state.dz2,
+            e.state.dxw, e.state.dzw,
+            e.state.tx, e.state.tz,
+            e.totalReward, e.count, e.avgReward);
+    }
+    fclose(fp);
+}
+
+void LoadQTable(std::vector<QEntry>& qTable) {
+    qTable.clear();
+    FILE* fp = fopen("ai_qtable.txt", "r");
+    if (!fp) return;
+
+    QEntry e;
+    while (fscanf(fp, "%d %d %d %d %d %d %d %d %f %d %f",
+        &e.state.dx1, &e.state.dz1,
+        &e.state.dx2, &e.state.dz2,
+        &e.state.dxw, &e.state.dzw,
+        &e.state.tx, &e.state.tz,
+        &e.totalReward, &e.count, &e.avgReward) == 11)
+    {
+        qTable.push_back(e);
+    }
+    fclose(fp);
+}
+
+// ai 발사 로직
+void AIFireYellowBall(std::vector<QEntry>& qTable) {
+    // 현재 게임판 상태
+    State baseState = getCurrentState();
+
+    float tx = 0, tz = 0;
+
+    // 1️⃣ 학습된 상태 중 평균보상이 가장 높은 조준을 찾기
+    auto best = std::max_element(qTable.begin(), qTable.end(),
+        [&](const QEntry& a, const QEntry& b) {
+            // 현재 환경이 유사한 상태만 비교
+            bool similarA = (abs(a.state.dx1 - baseState.dx1) <= 1 &&
+                abs(a.state.dx2 - baseState.dx2) <= 1);
+            bool similarB = (abs(b.state.dx1 - baseState.dx1) <= 1 &&
+                abs(b.state.dx2 - baseState.dx2) <= 1);
+            if (!similarA && !similarB) return false;
+            if (similarA && !similarB) return false;
+            if (!similarA && similarB) return true;
+            return a.avgReward < b.avgReward;
+        });
+
+    // 2️⃣ 80% 확률로 best, 20% 확률로 탐색(random)
+    if (best != qTable.end() && (rand() % 100) < 80) {
+        tx = best->state.tx * 0.5f;  // 다시 실제좌표로 환산
+        tz = best->state.tz * 0.5f;
+    }
+    else {
+        tx = ((rand() % 1200) / 100.0f - 6.0f);
+        tz = ((rand() % 800) / 100.0f - 4.0f);
+    }
+
+    // 파란공 조준점 이동
+    blue->setCenter(tx, (float)M_RADIUS, tz);
+
+    // 노란공 발사
+    D3DXVECTOR3 target = blue->getCenter();
+    D3DXVECTOR3 yellow = gs[2].getCenter();
+    double theta = atan2(target.z - yellow.z, target.x - yellow.x);
+    double dist = sqrt(pow(target.x - yellow.x, 2) + pow(target.z - yellow.z, 2));
+    gs[2].setPower(dist * cos(theta), dist * sin(theta));
+
+    // 현재 상태 저장 (턴 종료 후 보상 업데이트용)
+    lastState = baseState;
+    lastState.tx = bin(tx - yellow.x);
+    lastState.tz = bin(tz - yellow.z);
+}
+
+int calculateAIPoint(CSphere& yellowBall) // 보상 점수 계산
+{
+    bool* h = yellowBall.getHit();  // hit 배열 포인터 반환 (또는 직접 접근 가능)
+    int score = 0;
+
+    // 1️⃣ 흰공과 부딪혔으면 무조건 -1점 (파울)
+    if (h[3]) {
+        score = -1;
+    }
+    // 2️⃣ 두 빨간공 모두 명중
+    else if (h[0] && h[1] && !h[2] && !h[3]) {
+        score = +2;
+    }
+    // 3️⃣ 빨간공 중 하나만 명중
+    else if ((h[0] ^ h[1]) && !h[2] && !h[3]) {
+        score = +1;
+    }
+    // 4️⃣ 아무것도 맞추지 못함
+    else if (!h[0] && !h[1] && !h[2] && !h[3]) {
+        score = -1;
+    }
+
+    return score;
+}
+
+
+void OnAITurnEnd() {
+    int reward = calculateAIPoint(gs[2]);
+    UpdateQTable(QTable, lastState, (float)reward);
+    SaveQTable(QTable);
+
+    // 다음 턴 준비: hit 초기화
+    bool* hit = gs[2].getHit();
+    for (int i = 0; i < 4; i++) hit[i] = false;
+}
+
 
 // -----------------------------------------------------------------------------
 // Global variables
@@ -707,6 +897,8 @@ void Cleanup(void)
     destroyAllLegoBlock();
     g_light.destroy();
 
+    SaveQTable(QTable);
+
 }
 
 void updateScore(CSphere& ball) {
@@ -746,6 +938,19 @@ void updateScore(CSphere& ball) {
     for (int i = 0; i < 4; i++) {
         g_sphere[i].hit_initialize();
     }
+
+    if (isWhiteTurn == -1) { // 노란공일떄 학습 업데이트
+        OnAITurnEnd();
+    }
+
+    // 승리 판별하기.
+    if (whiteScore >= winScore) {
+        winner = 3;
+    }
+    else if (yellowScore >= winScore) {
+        winner = 2;
+    }
+    // 판별해서 이긴쪽. 폰트 생성? -> display() 마다 보이도록
 }
 
 // timeDelta represents the time between the current image frame and the last image frame.
@@ -956,7 +1161,7 @@ bool Display(float timeDelta)   // 매 프레임 실행
             if (isWhiteTurn == 1)
                 sprintf_s(turnText, "WHITE TURN !");
             else
-                sprintf_s(turnText, "YELLOW TURN !");
+                sprintf_s(turnText, "YELLOW TURN ! \n  (Press Space)");
 
             // 그림자용 사각형 (글자 대비용)
             RECT shadowWhite = rectWhite;
@@ -1037,15 +1242,16 @@ LRESULT CALLBACK d3d::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 double distance = sqrt(pow(targetpos.x - whitepos.x, 2) + pow(targetpos.z - whitepos.z, 2));
                 g_sphere[3].setPower(distance * cos(theta), distance * sin(theta));
             }
-            else if (isWhiteTurn == -1) {
-                D3DXVECTOR3	yellowpos = g_sphere[2].getCenter();
+            else if (isWhiteTurn == -1) { // 노란공일 때
+                AIFireYellowBall(QTable);
+                /*D3DXVECTOR3	yellowpos = g_sphere[2].getCenter();
                 double theta = acos(sqrt(pow(targetpos.x - yellowpos.x, 2)) / sqrt(pow(targetpos.x - yellowpos.x, 2) +
                     pow(targetpos.z - yellowpos.z, 2)));		// 기본 1 사분면
                 if (targetpos.z - yellowpos.z <= 0 && targetpos.x - yellowpos.x >= 0) { theta = -theta; }	//4 사분면
                 if (targetpos.z - yellowpos.z >= 0 && targetpos.x - yellowpos.x <= 0) { theta = PI - theta; } //2 사분면
                 if (targetpos.z - yellowpos.z <= 0 && targetpos.x - yellowpos.x <= 0) { theta = PI + theta; } // 3 사분면
                 double distance = sqrt(pow(targetpos.x - yellowpos.x, 2) + pow(targetpos.z - yellowpos.z, 2));
-                g_sphere[2].setPower(distance * cos(theta), distance * sin(theta));
+                g_sphere[2].setPower(distance * cos(theta), distance * sin(theta));*/
             }
             else {
                 // 에러 처리
@@ -1121,11 +1327,15 @@ LRESULT CALLBACK d3d::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
         // 마우스 왼쪽으로 회전하는 기능 제거
         if (LOWORD(wParam) & MK_RBUTTON) {
-            // 파란공 이동만 허용
-            float dx = (old_x - new_x);
-            float dy = (old_y - new_y);
-            D3DXVECTOR3 coord3d = g_target_blueball.getCenter();
-            g_target_blueball.setCenter(coord3d.x + dx * (-0.007f), coord3d.y, coord3d.z + dy * 0.007f);
+            if (isWhiteTurn == 1){
+              
+              // 파란공 이동만 허용
+              float dx = (old_x - new_x);
+              float dy = (old_y - new_y);
+              D3DXVECTOR3 coord3d = g_target_blueball.getCenter();
+              g_target_blueball.setCenter(coord3d.x + dx * (-0.007f), coord3d.y, coord3d.z + dy * 0.007f);
+            }
+            else; // player 2의 차례일 때에는 입력을 받지 않고 기다림.
         }
 
         old_x = new_x;
@@ -1155,10 +1365,12 @@ int WINAPI WinMain(HINSTANCE hinstance,
 
     // 디버깅용 콘솔 생성 종료
     */
+    LoadQTable(QTable);
 
     srand(static_cast<unsigned int>(time(NULL)));
 
     gs = g_sphere; // 배열 가리킴.
+    blue = &g_target_blueball; // 파란공 가리킴
 
     if (!d3d::InitD3D(hinstance,   // Direct3D 초기화
         Width, Height, true, D3DDEVTYPE_HAL, &Device))
