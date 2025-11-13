@@ -21,21 +21,20 @@
 // #include <iostream>
 
 IDirect3DDevice9* Device = NULL;
-ID3DXFont* win_Font = NULL; // 승리 표시용 폰트 객체 추가
 ID3DXFont* g_pFont = NULL; // 점수 표시용 폰트 객체 추가
+bool showGuideLine = true;   // true면 조준선 표시
 
-// 배경 표시용 구조체 추가
-struct CUSTOMVERTEX {
-    float x, y, z;
-    float tu, tv;
+const float TABLE_X_MIN = -4.56f + 0.12f;
+const float TABLE_X_MAX = 4.56f - 0.12f;
+const float TABLE_Z_MIN = -3.06f + 0.12f;
+const float TABLE_Z_MAX = 3.06f - 0.12f;
+const float TABLE_Y = -0.00012f;
+
+struct LineVertex {
+    D3DXVECTOR3 pos;
+    D3DCOLOR color;
 };
-#define D3DFVF_CUSTOMVERTEX (D3DFVF_XYZ | D3DFVF_TEX1)
-
-// 배경 표시용 전역변수 추가
-IDirect3DTexture9* g_pBackgroundTex = NULL;
-const char* casino_image = "casino_image.png";
-const char* space_image = "space_image.jpg";
-
+#define D3DFVF_LINEVERTEX (D3DFVF_XYZ | D3DFVF_DIFFUSE)
 
 // window size
 const int Width = 1024;
@@ -49,10 +48,9 @@ bool isTurnStarted = false;
 int isWhiteTurn = 1; // 하얀공부터 시작하는 걸로
 int whiteScore = 0;
 int yellowScore = 0;
-int winScore = 1; // winScore 만큼 점수를 먼저 획득하는 사람이 승리.
-int winner = 0; //  yellow : 2, white = 3
 
 CSphere* gs; // 포인터 선언만 가능 -> 이후에 g_sphere 배열 가리킬 예정.
+CSphere* blue; // 선언 문제 -> g_sphere_blueball 가리킬 예정
 
 // There are four balls
 // initialize the position (coordinate) of each ball (ball0 ~ ball3)
@@ -344,6 +342,10 @@ public:
         }
     }
 
+    bool* getHit() {
+        return hit;
+    }
+
 private:
     D3DXMATRIX              m_mLocal;
     D3DMATERIAL9            m_mtrl;
@@ -565,6 +567,191 @@ private:
     d3d::BoundingSphere m_bound;
 };
 
+// -----------------------------------------------------------------------------
+// Algorithms
+// -----------------------------------------------------------------------------
+
+// 상대 좌표 기반 상태
+struct State {
+    int dx1, dz1; // red1 - yellow 상대 위치
+    int dx2, dz2; // red2 - yellow 상대 위치
+    int dxw, dzw; // white - yellow 상대 위치
+    int tx, tz; // 파란공 - yellow 상대 위치
+};
+
+// Q-learning 용 엔트리
+struct QEntry {
+    State state;        // 상태
+    float totalReward;  // 누적 보상
+    int count;          // 시도 횟수
+    float avgReward;    // 평균 보상
+};
+
+// global variables for algorithms
+std::vector<QEntry> QTable;
+State lastState;
+
+// functions of algorithms
+int bin(float v, float step = 0.5f) {
+    // 0.5 단위로 좌표를 정수화
+    return int(v / step);
+}
+
+State getCurrentState() {   // 현재 상태 계산 함수
+    D3DXVECTOR3 red1 = gs[0].getCenter();
+    D3DXVECTOR3 red2 = gs[1].getCenter();
+    D3DXVECTOR3 white = gs[3].getCenter();
+    D3DXVECTOR3 yellow = gs[2].getCenter();
+    D3DXVECTOR3 target = blue->getCenter();
+
+    State s;
+    s.dx1 = bin(red1.x - yellow.x);
+    s.dz1 = bin(red1.z - yellow.z);
+    s.dx2 = bin(red2.x - yellow.x);
+    s.dz2 = bin(red2.z - yellow.z);
+    s.dxw = bin(white.x - yellow.x);
+    s.dzw = bin(white.z - yellow.z);
+    s.tx = bin(target.x - yellow.x);
+    s.tz = bin(target.z - yellow.z);
+    return s;
+}
+
+void UpdateQTable(std::vector<QEntry>& qTable, const State& s, float reward) {   // QTable 갱신 함수
+    for (auto& e : qTable) {
+        if (memcmp(&e.state, &s, sizeof(State)) == 0) {
+            // 기존 state 발견 → 업데이트
+            e.totalReward += reward;
+            e.count++;
+            e.avgReward = e.totalReward / e.count;
+            return;
+        }
+    }
+
+    // 새로운 state 추가
+    QEntry entry;
+    entry.state = s;
+    entry.totalReward = reward;
+    entry.count = 1;
+    entry.avgReward = reward;
+    qTable.push_back(entry);
+}
+
+// Parameter File Load/Save
+void SaveQTable(const std::vector<QEntry>& qTable) {
+    FILE* fp = fopen("ai_qtable.txt", "w");
+    if (!fp) return;
+    for (auto& e : qTable) {
+        fprintf(fp, "%d %d %d %d %d %d %d %d %f %d %f\n",
+            e.state.dx1, e.state.dz1,
+            e.state.dx2, e.state.dz2,
+            e.state.dxw, e.state.dzw,
+            e.state.tx, e.state.tz,
+            e.totalReward, e.count, e.avgReward);
+    }
+    fclose(fp);
+}
+
+void LoadQTable(std::vector<QEntry>& qTable) {
+    qTable.clear();
+    FILE* fp = fopen("ai_qtable.txt", "r");
+    if (!fp) return;
+
+    QEntry e;
+    while (fscanf(fp, "%d %d %d %d %d %d %d %d %f %d %f",
+        &e.state.dx1, &e.state.dz1,
+        &e.state.dx2, &e.state.dz2,
+        &e.state.dxw, &e.state.dzw,
+        &e.state.tx, &e.state.tz,
+        &e.totalReward, &e.count, &e.avgReward) == 11)
+    {
+        qTable.push_back(e);
+    }
+    fclose(fp);
+}
+
+// ai 발사 로직
+void AIFireYellowBall(std::vector<QEntry>& qTable) {
+    // 현재 게임판 상태
+    State baseState = getCurrentState();
+
+    float tx = 0, tz = 0;
+
+    // 1️⃣ 학습된 상태 중 평균보상이 가장 높은 조준을 찾기
+    auto best = std::max_element(qTable.begin(), qTable.end(),
+        [&](const QEntry& a, const QEntry& b) {
+            // 현재 환경이 유사한 상태만 비교
+            bool similarA = (abs(a.state.dx1 - baseState.dx1) <= 1 &&
+                abs(a.state.dx2 - baseState.dx2) <= 1);
+            bool similarB = (abs(b.state.dx1 - baseState.dx1) <= 1 &&
+                abs(b.state.dx2 - baseState.dx2) <= 1);
+            if (!similarA && !similarB) return false;
+            if (similarA && !similarB) return false;
+            if (!similarA && similarB) return true;
+            return a.avgReward < b.avgReward;
+        });
+
+    // 2️⃣ 80% 확률로 best, 20% 확률로 탐색(random)
+    if (best != qTable.end() && (rand() % 100) < 80) {
+        tx = best->state.tx * 0.5f;  // 다시 실제좌표로 환산
+        tz = best->state.tz * 0.5f;
+    }
+    else {
+        tx = ((rand() % 1200) / 100.0f - 6.0f);
+        tz = ((rand() % 800) / 100.0f - 4.0f);
+    }
+
+    // 파란공 조준점 이동
+    blue->setCenter(tx, (float)M_RADIUS, tz);
+
+    // 노란공 발사
+    D3DXVECTOR3 target = blue->getCenter();
+    D3DXVECTOR3 yellow = gs[2].getCenter();
+    double theta = atan2(target.z - yellow.z, target.x - yellow.x);
+    double dist = sqrt(pow(target.x - yellow.x, 2) + pow(target.z - yellow.z, 2));
+    gs[2].setPower(dist * cos(theta), dist * sin(theta));
+
+    // 현재 상태 저장 (턴 종료 후 보상 업데이트용)
+    lastState = baseState;
+    lastState.tx = bin(tx - yellow.x);
+    lastState.tz = bin(tz - yellow.z);
+}
+
+int calculateAIPoint(CSphere& yellowBall) // 보상 점수 계산
+{
+    bool* h = yellowBall.getHit();  // hit 배열 포인터 반환 (또는 직접 접근 가능)
+    int score = 0;
+
+    // 1️⃣ 흰공과 부딪혔으면 무조건 -1점 (파울)
+    if (h[3]) {
+        score = -1;
+    }
+    // 2️⃣ 두 빨간공 모두 명중
+    else if (h[0] && h[1] && !h[2] && !h[3]) {
+        score = +2;
+    }
+    // 3️⃣ 빨간공 중 하나만 명중
+    else if ((h[0] ^ h[1]) && !h[2] && !h[3]) {
+        score = +1;
+    }
+    // 4️⃣ 아무것도 맞추지 못함
+    else if (!h[0] && !h[1] && !h[2] && !h[3]) {
+        score = -1;
+    }
+
+    return score;
+}
+
+
+void OnAITurnEnd() {
+    int reward = calculateAIPoint(gs[2]);
+    UpdateQTable(QTable, lastState, (float)reward);
+    SaveQTable(QTable);
+
+    // 다음 턴 준비: hit 초기화
+    bool* hit = gs[2].getHit();
+    for (int i = 0; i < 4; i++) hit[i] = false;
+}
+
 
 // -----------------------------------------------------------------------------
 // Global variables
@@ -627,6 +814,7 @@ bool Setup()
     lit.Diffuse = d3d::WHITE;
     lit.Specular = d3d::WHITE * 0.9f;
     lit.Ambient = d3d::WHITE * 0.9f;
+    //lit.Position = D3DXVECTOR3(0.3f, 4.0f, -4.0f);
     lit.Position = D3DXVECTOR3(0.0f, 3.0f, 0.0f);
     lit.Range = 100.0f;
     lit.Attenuation0 = 0.0f;
@@ -665,42 +853,27 @@ bool Setup()
         return false;
     }
 
-    // 승리 & 게임 종료 폰트 생성
-    D3DXFONT_DESC fontWin = {
-        50,
-        0,
-        FW_BOLD,
-        1,
-        FALSE,
-        DEFAULT_CHARSET,
-        OUT_DEFAULT_PRECIS,
-        DEFAULT_QUALITY,
-        DEFAULT_PITCH | FF_DONTCARE,
-        "Arial"                    // 폰트 이름
-    };
-    if (FAILED(D3DXCreateFontIndirect(Device, &fontWin, &win_Font))) {
-        return false;
-    }
 
+    //// Position and aim the camera. : 카메라 설정
+    //D3DXVECTOR3 pos(0.0f, 5.0f, -8.0f);
+    //D3DXVECTOR3 target(0.0f, 0.0f, 0.0f);
+    //D3DXVECTOR3 up(0.0f, 2.0f, 0.0f);
+    //D3DXMatrixLookAtLH(&g_mView, &pos, &target, &up);
+    //Device->SetTransform(D3DTS_VIEW, &g_mView);
 
-    // Position and aim the camera. : 카메라 설정
-    D3DXVECTOR3 pos(0.0f, 5.0f, -8.0f);
-    D3DXVECTOR3 target(0.0f, 0.0f, 0.0f);
-    D3DXVECTOR3 up(0.0f, 2.0f, 0.0f);
-    D3DXMatrixLookAtLH(&g_mView, &pos, &target, &up);
+    //카메라뷰
+    D3DXVECTOR3 eye(0.0f, 10.0f, 0.0f);    // 위쪽에서
+    D3DXVECTOR3 lookAt(0.0f, 0.0f, 0.0f); //테이블 중심 바라봄
+    D3DXVECTOR3 up(0.0f, 0.0f, -1.0f);  //위에서 아래보기
+    D3DXMatrixLookAtLH(&g_mView, &eye, &lookAt, &up);
     Device->SetTransform(D3DTS_VIEW, &g_mView);
+
+
 
     // Set the projection matrix. : 투영 행렬 설정
     D3DXMatrixPerspectiveFovLH(&g_mProj, D3DX_PI / 4,
         (float)Width / (float)Height, 1.0f, 100.0f);
     Device->SetTransform(D3DTS_PROJECTION, &g_mProj);
-
-    // 배경 설정 시작
-    // 배경 텍스처 로드
-    if (FAILED(D3DXCreateTextureFromFile(Device, space_image, &g_pBackgroundTex))) {
-        MessageBox(0, "Failed to load background texture!", 0, 0);
-        return false;
-    }
 
     // Set render states.
     Device->SetRenderState(D3DRS_LIGHTING, TRUE);
@@ -721,14 +894,10 @@ void Cleanup(void)
         g_pFont->Release();
         g_pFont = NULL;
     }
-
-    if (g_pBackgroundTex) {
-        g_pBackgroundTex->Release();
-        g_pBackgroundTex = NULL;
-    }
-
     destroyAllLegoBlock();
     g_light.destroy();
+
+    SaveQTable(QTable);
 
 }
 
@@ -770,6 +939,10 @@ void updateScore(CSphere& ball) {
         g_sphere[i].hit_initialize();
     }
 
+    if (isWhiteTurn == -1) { // 노란공일떄 학습 업데이트
+        OnAITurnEnd();
+    }
+
     // 승리 판별하기.
     if (whiteScore >= winScore) {
         winner = 3;
@@ -792,45 +965,6 @@ bool Display(float timeDelta)   // 매 프레임 실행
     {
         Device->Clear(0, 0, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, 0x00afafaf, 1.0f, 0);
         Device->BeginScene();
-
-        // 현재 뷰/투영 행렬 백업
-        D3DXMATRIX oldView, oldProj;
-        Device->GetTransform(D3DTS_VIEW, &oldView);
-        Device->GetTransform(D3DTS_PROJECTION, &oldProj);
-
-        // 직교 투영 행렬 설정 (2D 화면용)
-        D3DXMATRIX orthoProj, identity;
-        D3DXMatrixOrthoLH(&orthoProj, (float)Width, (float)Height, 0.0f, 1.0f);
-        D3DXMatrixIdentity(&identity);
-        Device->SetTransform(D3DTS_VIEW, &identity);
-        Device->SetTransform(D3DTS_PROJECTION, &orthoProj);
-
-        // 배경용 정점(화면 전체) 설정
-        CUSTOMVERTEX v[6] = {
-            { -Width / 2.0f,  Height / 2.0f, 0.0f, 0.0f, 0.0f },
-            {  Width / 2.0f,  Height / 2.0f, 0.0f, 1.0f, 0.0f },
-            {  Width / 2.0f, -Height / 2.0f, 0.0f, 1.0f, 1.0f },
-            { -Width / 2.0f,  Height / 2.0f, 0.0f, 0.0f, 0.0f },
-            {  Width / 2.0f, -Height / 2.0f, 0.0f, 1.0f, 1.0f },
-            { -Width / 2.0f, -Height / 2.0f, 0.0f, 0.0f, 1.0f },
-        };
-
-        // 조명/깊이 비활성화
-        Device->SetRenderState(D3DRS_LIGHTING, FALSE);
-        Device->SetRenderState(D3DRS_ZENABLE, FALSE);
-
-        // 텍스처 설정
-        Device->SetTexture(0, g_pBackgroundTex);
-        Device->SetFVF(D3DFVF_CUSTOMVERTEX);
-        Device->DrawPrimitiveUP(D3DPT_TRIANGLELIST, 2, v, sizeof(CUSTOMVERTEX));
-
-        // 복구
-        Device->SetRenderState(D3DRS_ZENABLE, TRUE);
-        Device->SetRenderState(D3DRS_LIGHTING, TRUE);
-        Device->SetTexture(0, NULL);
-        Device->SetTransform(D3DTS_VIEW, &oldView);
-        Device->SetTransform(D3DTS_PROJECTION, &oldProj);
-
 
         // update the position of each ball. during update, check whether each ball hit by walls.
         for (i = 0; i < 4; i++) {
@@ -863,6 +997,7 @@ bool Display(float timeDelta)   // 매 프레임 실행
             else
                 updateScore(g_sphere[2]);  // yellow
             isTurnStarted = false; // 한 번만 계산되게
+            showGuideLine = true;  // 모든 공이 멈추면 조준선 다시 표시
         }
 
         // draw plane, walls, and spheres
@@ -874,10 +1009,141 @@ bool Display(float timeDelta)   // 매 프레임 실행
         g_target_blueball.draw(Device, g_mWorld);
         g_light.draw(Device);
 
-        
-        // ==========================
+        // draw plane, walls, and spheres
+        g_legoPlane.draw(Device, g_mWorld);
+        for (i = 0; i < 4; i++) {
+            g_legowall[i].draw(Device, g_mWorld);
+            g_sphere[i].draw(Device, g_mWorld);
+        }
+        g_target_blueball.draw(Device, g_mWorld);
+        g_light.draw(Device);
+
+
+        // 조준선 (showGuideLine이 true일 때, white공 턴일때만 표시)
+        if (showGuideLine && isWhiteTurn == 1)
+        {
+            D3DXVECTOR3 cueBallPos = g_sphere[3].getCenter();
+            D3DXVECTOR3 blueBallPos = g_target_blueball.getCenter();
+
+            float lineY = TABLE_Y + M_RADIUS * 0.2f - 2.7;
+            cueBallPos.y = blueBallPos.y = lineY;
+
+            D3DXVECTOR3 dir = blueBallPos - cueBallPos;
+            D3DXVec3Normalize(&dir, &dir);
+
+            const float MAX_DIST = 200.0f;
+            const float SEG = 0.15f;   // 점선 segment 길이
+            const float GAP = 0.15f;   // 점선 간격
+
+
+            D3DXVECTOR3 p0 = cueBallPos;
+            D3DXVECTOR3 dirNow = dir;
+
+            int reflectCount = 0;
+
+            // 렌더링 설정
+            Device->SetRenderState(D3DRS_LIGHTING, FALSE);
+            Device->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+            Device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+            Device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+            Device->SetFVF(D3DFVF_LINEVERTEX);
+
+            D3DCOLOR guideColor = D3DCOLOR_ARGB(200, 255, 200, 0);
+
+            while (reflectCount < 2)
+            {
+                // 현 위치 p0에서 다음 벽 충돌점 계산
+                float hitDist = 9999.0f;
+                D3DXVECTOR3 hitPoint;
+                bool hitOccurred = false;
+
+                // X 방향 벽
+                if (dirNow.x > 0)
+                {
+                    float tx = (TABLE_X_MAX - p0.x) / dirNow.x;
+                    if (tx > 0 && tx < hitDist)
+                    {
+                        hitDist = tx;
+                        hitPoint = p0 + dirNow * tx;
+                        hitOccurred = true;
+                    }
+                }
+                else if (dirNow.x < 0)
+                {
+                    float tx = (TABLE_X_MIN - p0.x) / dirNow.x;
+                    if (tx > 0 && tx < hitDist)
+                    {
+                        hitDist = tx;
+                        hitPoint = p0 + dirNow * tx;
+                        hitOccurred = true;
+                    }
+                }
+
+                // Z 방향 벽
+                if (dirNow.z > 0)
+                {
+                    float tz = (TABLE_Z_MAX - p0.z) / dirNow.z;
+                    if (tz > 0 && tz < hitDist)
+                    {
+                        hitDist = tz;
+                        hitPoint = p0 + dirNow * tz;
+                        hitOccurred = true;
+                    }
+                }
+                else if (dirNow.z < 0)
+                {
+                    float tz = (TABLE_Z_MIN - p0.z) / dirNow.z;
+                    if (tz > 0 && tz < hitDist)
+                    {
+                        hitDist = tz;
+                        hitPoint = p0 + dirNow * tz;
+                        hitOccurred = true;
+                    }
+                }
+
+                if (!hitOccurred) break;
+
+                // p0 >> hitPoint 를 점선으로 그리기, Gap 반복
+                float totalDist = hitDist;
+                for (float t = 0; t < totalDist; t += (SEG + GAP))
+                {
+                    float t0 = t;
+                    float t1 = t + SEG;
+                    if (t1 > totalDist) t1 = totalDist;
+
+                    D3DXVECTOR3 s = p0 + dirNow * t0;
+                    D3DXVECTOR3 e = p0 + dirNow * t1;
+
+                    LineVertex lv[2] = {
+                        { s, guideColor },
+                        { e, guideColor }
+                    };
+                    Device->DrawPrimitiveUP(D3DPT_LINELIST, 1, lv, sizeof(LineVertex));
+                }
+
+                // 반사 처리
+                bool reflectX = false, reflectZ = false;
+
+                if (fabs(hitPoint.x - TABLE_X_MIN) < 0.01f || fabs(hitPoint.x - TABLE_X_MAX) < 0.01f)
+                    reflectX = true;
+                if (fabs(hitPoint.z - TABLE_Z_MIN) < 0.01f || fabs(hitPoint.z - TABLE_Z_MAX) < 0.01f)
+                    reflectZ = true;
+
+                if (reflectX) dirNow.x *= -1;
+                if (reflectZ) dirNow.z *= -1;
+
+                p0 = hitPoint;
+
+                reflectCount++;
+            }
+
+            Device->SetRenderState(D3DRS_LIGHTING, TRUE);
+            Device->SetRenderState(D3DRS_ALPHABLENDENABLE, FALSE);
+        }
+
+
+
         // 점수판 및 턴 표시
-        // ==========================
         if (g_pFont) {
             RECT rectWhite, rectYellow, rectTurn;
 
@@ -895,7 +1161,7 @@ bool Display(float timeDelta)   // 매 프레임 실행
             if (isWhiteTurn == 1)
                 sprintf_s(turnText, "WHITE TURN !");
             else
-                sprintf_s(turnText, "YELLOW TURN !");
+                sprintf_s(turnText, "YELLOW TURN ! \n  (Press Space)");
 
             // 그림자용 사각형 (글자 대비용)
             RECT shadowWhite = rectWhite;
@@ -919,28 +1185,6 @@ bool Display(float timeDelta)   // 매 프레임 실행
                 g_pFont->DrawTextA(NULL, turnText, -1, &rectTurn, DT_NOCLIP, D3DXCOLOR(0.5f, 0.8f, 1.0f, 1.0f)); // 하늘색 계열
             else
                 g_pFont->DrawTextA(NULL, turnText, -1, &rectTurn, DT_NOCLIP, D3DXCOLOR(1.0f, 0.8f, 0.3f, 1.0f)); // 노란빛
-        }
-
-        // 게임 종료 및 승자 표시
-        if (winner != 0) {
-            if (winner == 2) {
-                if (win_Font) {
-                    RECT winRect;
-                    SetRect(&winRect, 200, 300, 0, 0);
-                    char text[128];
-                    sprintf_s(text, "Game Over - Winner : %s", "yellow");
-                    win_Font->DrawTextA(NULL, text,-1, &winRect, DT_NOCLIP, D3DXCOLOR(1, 0, 0, 1));
-                }
-            }
-            else if (winner == 3) {
-                if (win_Font) {
-                    RECT winRect;
-                    SetRect(&winRect, 200, 300, 0, 0);
-                    char text[128];
-                    sprintf_s(text, "Game Over - Winner : %s", "white");
-                    win_Font->DrawTextA(NULL, text, -1, &winRect, DT_NOCLIP, D3DXCOLOR(1, 0, 0, 1));
-                }
-            }
         }
 
 
@@ -983,6 +1227,8 @@ LRESULT CALLBACK d3d::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             break;
         case VK_SPACE:   // 핵심 조작 로직 : 파란공과 흰공 위치 이용해 발사 방향 계산
 
+            showGuideLine = false;   // 선 숨김
+
             // white, yellow 바꾸기.
 
             D3DXVECTOR3 targetpos = g_target_blueball.getCenter(); // 이건 if 문에 포함 x
@@ -996,15 +1242,16 @@ LRESULT CALLBACK d3d::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 double distance = sqrt(pow(targetpos.x - whitepos.x, 2) + pow(targetpos.z - whitepos.z, 2));
                 g_sphere[3].setPower(distance * cos(theta), distance * sin(theta));
             }
-            else if (isWhiteTurn == -1) {
-                D3DXVECTOR3	yellowpos = g_sphere[2].getCenter();
+            else if (isWhiteTurn == -1) { // 노란공일 때
+                AIFireYellowBall(QTable);
+                /*D3DXVECTOR3	yellowpos = g_sphere[2].getCenter();
                 double theta = acos(sqrt(pow(targetpos.x - yellowpos.x, 2)) / sqrt(pow(targetpos.x - yellowpos.x, 2) +
                     pow(targetpos.z - yellowpos.z, 2)));		// 기본 1 사분면
                 if (targetpos.z - yellowpos.z <= 0 && targetpos.x - yellowpos.x >= 0) { theta = -theta; }	//4 사분면
                 if (targetpos.z - yellowpos.z >= 0 && targetpos.x - yellowpos.x <= 0) { theta = PI - theta; } //2 사분면
                 if (targetpos.z - yellowpos.z <= 0 && targetpos.x - yellowpos.x <= 0) { theta = PI + theta; } // 3 사분면
                 double distance = sqrt(pow(targetpos.x - yellowpos.x, 2) + pow(targetpos.z - yellowpos.z, 2));
-                g_sphere[2].setPower(distance * cos(theta), distance * sin(theta));
+                g_sphere[2].setPower(distance * cos(theta), distance * sin(theta));*/
             }
             else {
                 // 에러 처리
@@ -1021,58 +1268,81 @@ LRESULT CALLBACK d3d::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         break;
     }
 
-    case WM_MOUSEMOVE:   // 마우스 이동 처리 : 마우스의 현재 좌표를 받아옴. 왼쪽/오른쪽 버튼 뭐 눌렸는지에 따라
+    //case WM_MOUSEMOVE:   // 마우스 이동 처리 : 마우스의 현재 좌표를 받아옴. 왼쪽/오른쪽 버튼 뭐 눌렸는지에 따라
+    //{
+    //    int new_x = LOWORD(lParam);
+    //    int new_y = HIWORD(lParam);
+    //    float dx;
+    //    float dy;
+
+    //    if (LOWORD(wParam) & MK_LBUTTON) {
+
+    //        if (isReset) {
+    //            isReset = false;
+    //        }
+    //        else {
+    //            D3DXVECTOR3 vDist;
+    //            D3DXVECTOR3 vTrans;
+    //            D3DXMATRIX mTrans;
+    //            D3DXMATRIX mX;
+    //            D3DXMATRIX mY;
+
+    //            switch (move) {
+    //            case WORLD_MOVE:
+    //                dx = (old_x - new_x) * 0.01f;
+    //                dy = (old_y - new_y) * 0.01f;
+    //                D3DXMatrixRotationY(&mX, dx);
+    //                D3DXMatrixRotationX(&mY, dy);
+    //                g_mWorld = g_mWorld * mX * mY;
+
+    //                break;
+    //            }
+    //        }
+
+    //        old_x = new_x;
+    //        old_y = new_y;
+
+    //    }
+    //    else {
+    //        isReset = true;
+
+    //        if (LOWORD(wParam) & MK_RBUTTON) {
+    //            dx = (old_x - new_x);// * 0.01f;
+    //            dy = (old_y - new_y);// * 0.01f;
+
+    //            D3DXVECTOR3 coord3d = g_target_blueball.getCenter();
+    //            g_target_blueball.setCenter(coord3d.x + dx * (-0.007f), coord3d.y, coord3d.z + dy * 0.007f);
+    //        }
+    //        old_x = new_x;
+    //        old_y = new_y;
+
+    //        move = WORLD_MOVE;
+    //    }
+    //    break;
+    //}
+    case WM_MOUSEMOVE:
     {
         int new_x = LOWORD(lParam);
         int new_y = HIWORD(lParam);
-        float dx;
-        float dy;
 
-        if (LOWORD(wParam) & MK_LBUTTON) {
-
-            if (isReset) {
-                isReset = false;
+        // 마우스 왼쪽으로 회전하는 기능 제거
+        if (LOWORD(wParam) & MK_RBUTTON) {
+            if (isWhiteTurn == 1){
+              
+              // 파란공 이동만 허용
+              float dx = (old_x - new_x);
+              float dy = (old_y - new_y);
+              D3DXVECTOR3 coord3d = g_target_blueball.getCenter();
+              g_target_blueball.setCenter(coord3d.x + dx * (-0.007f), coord3d.y, coord3d.z + dy * 0.007f);
             }
-            else {
-                D3DXVECTOR3 vDist;
-                D3DXVECTOR3 vTrans;
-                D3DXMATRIX mTrans;
-                D3DXMATRIX mX;
-                D3DXMATRIX mY;
-
-                switch (move) {
-                case WORLD_MOVE:
-                    dx = (old_x - new_x) * 0.01f;
-                    dy = (old_y - new_y) * 0.01f;
-                    D3DXMatrixRotationY(&mX, dx);
-                    D3DXMatrixRotationX(&mY, dy);
-                    g_mWorld = g_mWorld * mX * mY;
-
-                    break;
-                }
-            }
-
-            old_x = new_x;
-            old_y = new_y;
-
+            else; // player 2의 차례일 때에는 입력을 받지 않고 기다림.
         }
-        else {
-            isReset = true;
 
-            if (LOWORD(wParam) & MK_RBUTTON) {
-                dx = (old_x - new_x);// * 0.01f;
-                dy = (old_y - new_y);// * 0.01f;
-
-                D3DXVECTOR3 coord3d = g_target_blueball.getCenter();
-                g_target_blueball.setCenter(coord3d.x + dx * (-0.007f), coord3d.y, coord3d.z + dy * 0.007f);
-            }
-            old_x = new_x;
-            old_y = new_y;
-
-            move = WORLD_MOVE;
-        }
+        old_x = new_x;
+        old_y = new_y;
         break;
     }
+
     }
 
     return ::DefWindowProc(hwnd, msg, wParam, lParam);
@@ -1095,10 +1365,12 @@ int WINAPI WinMain(HINSTANCE hinstance,
 
     // 디버깅용 콘솔 생성 종료
     */
+    LoadQTable(QTable);
 
     srand(static_cast<unsigned int>(time(NULL)));
 
     gs = g_sphere; // 배열 가리킴.
+    blue = &g_target_blueball; // 파란공 가리킴
 
     if (!d3d::InitD3D(hinstance,   // Direct3D 초기화
         Width, Height, true, D3DDEVTYPE_HAL, &Device))
