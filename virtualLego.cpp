@@ -48,6 +48,8 @@ bool isTurnStarted = false;
 int isWhiteTurn = 1; // 하얀공부터 시작하는 걸로
 int whiteScore = 0;
 int yellowScore = 0;
+int winScore = 10;
+int winner = 0;
 
 CSphere* gs; // 포인터 선언만 가능 -> 이후에 g_sphere 배열 가리킬 예정.
 CSphere* blue; // 선언 문제 -> g_sphere_blueball 가리킬 예정
