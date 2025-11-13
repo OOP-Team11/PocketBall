@@ -51,6 +51,8 @@ int yellowScore = 0;
 int winScore = 10;
 int winner = 0;
 
+bool isInitBlue = false;
+
 CSphere* gs; // 포인터 선언만 가능 -> 이후에 g_sphere 배열 가리킬 예정.
 CSphere* blue; // 선언 문제 -> g_sphere_blueball 가리킬 예정
 
@@ -953,6 +955,7 @@ void updateScore(CSphere& ball) {
         winner = 2;
     }
     // 판별해서 이긴쪽. 폰트 생성? -> display() 마다 보이도록
+    isInitBlue = false;
 }
 
 // timeDelta represents the time between the current image frame and the last image frame.
@@ -980,6 +983,12 @@ bool Display(float timeDelta)   // 매 프레임 실행
                 if (i >= j) { continue; }
                 g_sphere[i].hitBy(g_sphere[j]);
             }
+        }
+
+        // white Turn 일 때 파란공 위치 초기화
+        if ((isWhiteTurn == 1) && !isTurnStarted && !isInitBlue) { // 하얀색 공 턴이고 && 턴이 아직 시작 안된 상태고, isInitBlue가 false 일때 (그니까 매 프레임마다 가운데 위치로 셋되면 절대 안되니까, isInitBlue가 false일때만 하는걸로 하고, 턴 중에는 true 유지, 이후에 updateScore()에서 false 로 변함)
+            g_target_blueball.setCenter(.0f, (float)M_RADIUS, .0f);
+            isInitBlue = true;
         }
 
         // 모든 공이 거의 멈췄는지 체크
