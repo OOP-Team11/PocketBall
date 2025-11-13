@@ -1,6 +1,11 @@
 # Build results
 bin/
 obj/
+# Build results -- added
+Debug/
+Release/
+x64/
+x86/
 
 # Visual Studio user-specific files
 .vs/
@@ -15,6 +20,11 @@ obj/
 *.vscode/
 *.cache/
 *.tmp
+*.obj
+*.pdb
+*.exe
+*.ilk
+*.tlog
 
 # Others
 _ReSharper*/
