@@ -819,10 +819,10 @@ bool Setup()
     lit.Specular = d3d::WHITE * 0.9f;
     lit.Ambient = d3d::WHITE * 0.9f;
     //lit.Position = D3DXVECTOR3(0.3f, 4.0f, -4.0f);
-    lit.Position = D3DXVECTOR3(0.0f, 3.0f, 0.0f);
-    lit.Range = 100.0f;
+    lit.Position = D3DXVECTOR3(0.0f, 3.0f, 0.0f); // 카메라보다 광원이 높게
+    lit.Range = 100.0f; // 빛이 닿는 거리 늘리기
     lit.Attenuation0 = 0.0f;
-    lit.Attenuation1 = 0.9f;
+    lit.Attenuation1 = 0.9f; // 거리에 따른 빛 감소량을 감소
     lit.Attenuation2 = 0.0f;
     /*lit.Type = D3DLIGHT_SPOT;
     lit.Diffuse = D3DXCOLOR(1.0f, 0.95f, 0.8f, 1.0f);
