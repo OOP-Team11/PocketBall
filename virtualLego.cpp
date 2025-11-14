@@ -24,6 +24,19 @@ IDirect3DDevice9* Device = NULL;
 ID3DXFont* g_pFont = NULL; // 점수 표시용 폰트 객체 추가
 bool showGuideLine = true;   // true면 조준선 표시
 
+// 배경 표시용 구조체 추가
+struct CUSTOMVERTEX {
+    float x, y, z;
+    float tu, tv;
+};
+#define D3DFVF_CUSTOMVERTEX (D3DFVF_XYZ | D3DFVF_TEX1)
+
+// 배경 표시용 전역변수 추가
+IDirect3DTexture9* g_pBackgroundTex = NULL;
+const char* casino_image = "casino_image.png";
+const char* space_image = "space_image.jpg";
+
+
 const float TABLE_X_MIN = -4.56f + 0.12f;
 const float TABLE_X_MAX = 4.56f - 0.12f;
 const float TABLE_Z_MIN = -3.06f + 0.12f;
@@ -50,6 +63,8 @@ int whiteScore = 0;
 int yellowScore = 0;
 int winScore = 10;
 int winner = 0;
+
+bool isInitBlue = false;
 
 CSphere* gs; // 포인터 선언만 가능 -> 이후에 g_sphere 배열 가리킬 예정.
 CSphere* blue; // 선언 문제 -> g_sphere_blueball 가리킬 예정
@@ -877,6 +892,13 @@ bool Setup()
         (float)Width / (float)Height, 1.0f, 100.0f);
     Device->SetTransform(D3DTS_PROJECTION, &g_mProj);
 
+    // 배경 설정 시작
+    // 배경 텍스처 로드
+    if (FAILED(D3DXCreateTextureFromFile(Device, space_image, &g_pBackgroundTex))) {
+        MessageBox(0, "Failed to load background texture!", 0, 0);
+        return false;
+    }
+
     // Set render states.
     Device->SetRenderState(D3DRS_LIGHTING, TRUE);
     Device->SetRenderState(D3DRS_SPECULARENABLE, TRUE);
@@ -895,6 +917,10 @@ void Cleanup(void)
     if (g_pFont) { // 폰트 해제
         g_pFont->Release();
         g_pFont = NULL;
+    }
+    if (g_pBackgroundTex) {
+        g_pBackgroundTex->Release();
+        g_pBackgroundTex = NULL;
     }
     destroyAllLegoBlock();
     g_light.destroy();
@@ -953,6 +979,7 @@ void updateScore(CSphere& ball) {
         winner = 2;
     }
     // 판별해서 이긴쪽. 폰트 생성? -> display() 마다 보이도록
+    isInitBlue = false;
 }
 
 // timeDelta represents the time between the current image frame and the last image frame.
@@ -968,6 +995,44 @@ bool Display(float timeDelta)   // 매 프레임 실행
         Device->Clear(0, 0, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER, 0x00afafaf, 1.0f, 0);
         Device->BeginScene();
 
+        // 현재 뷰/투영 행렬 백업
+        D3DXMATRIX oldView, oldProj;
+        Device->GetTransform(D3DTS_VIEW, &oldView);
+        Device->GetTransform(D3DTS_PROJECTION, &oldProj);
+
+        // 직교 투영 행렬 설정 (2D 화면용)
+        D3DXMATRIX orthoProj, identity;
+        D3DXMatrixOrthoLH(&orthoProj, (float)Width, (float)Height, 0.0f, 1.0f);
+        D3DXMatrixIdentity(&identity);
+        Device->SetTransform(D3DTS_VIEW, &identity);
+        Device->SetTransform(D3DTS_PROJECTION, &orthoProj);
+
+        // 배경용 정점(화면 전체) 설정
+        CUSTOMVERTEX v[6] = {
+            { -Width / 2.0f,  Height / 2.0f, 0.0f, 0.0f, 0.0f },
+            {  Width / 2.0f,  Height / 2.0f, 0.0f, 1.0f, 0.0f },
+            {  Width / 2.0f, -Height / 2.0f, 0.0f, 1.0f, 1.0f },
+            { -Width / 2.0f,  Height / 2.0f, 0.0f, 0.0f, 0.0f },
+            {  Width / 2.0f, -Height / 2.0f, 0.0f, 1.0f, 1.0f },
+            { -Width / 2.0f, -Height / 2.0f, 0.0f, 0.0f, 1.0f },
+        };
+
+        // 조명/깊이 비활성화
+        Device->SetRenderState(D3DRS_LIGHTING, FALSE);
+        Device->SetRenderState(D3DRS_ZENABLE, FALSE);
+
+        // 텍스처 설정
+        Device->SetTexture(0, g_pBackgroundTex);
+        Device->SetFVF(D3DFVF_CUSTOMVERTEX);
+        Device->DrawPrimitiveUP(D3DPT_TRIANGLELIST, 2, v, sizeof(CUSTOMVERTEX));
+
+        // 복구
+        Device->SetRenderState(D3DRS_ZENABLE, TRUE);
+        Device->SetRenderState(D3DRS_LIGHTING, TRUE);
+        Device->SetTexture(0, NULL);
+        Device->SetTransform(D3DTS_VIEW, &oldView);
+        Device->SetTransform(D3DTS_PROJECTION, &oldProj);
+
         // update the position of each ball. during update, check whether each ball hit by walls.
         for (i = 0; i < 4; i++) {
             g_sphere[i].ballUpdate(timeDelta);
@@ -980,6 +1045,12 @@ bool Display(float timeDelta)   // 매 프레임 실행
                 if (i >= j) { continue; }
                 g_sphere[i].hitBy(g_sphere[j]);
             }
+        }
+
+        // white Turn 일 때 파란공 위치 초기화
+        if ((isWhiteTurn == 1) && !isTurnStarted && !isInitBlue) { // 하얀색 공 턴이고 && 턴이 아직 시작 안된 상태고, isInitBlue가 false 일때 (그니까 매 프레임마다 가운데 위치로 셋되면 절대 안되니까, isInitBlue가 false일때만 하는걸로 하고, 턴 중에는 true 유지, 이후에 updateScore()에서 false 로 변함)
+            g_target_blueball.setCenter(.0f, (float)M_RADIUS, .0f);
+            isInitBlue = true;
         }
 
         // 모든 공이 거의 멈췄는지 체크
