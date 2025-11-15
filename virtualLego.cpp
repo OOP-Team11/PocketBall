@@ -815,14 +815,14 @@ bool Setup()
     D3DLIGHT9 lit;   // 조명 객체 생성?
     ::ZeroMemory(&lit, sizeof(lit));
     lit.Type = D3DLIGHT_POINT;
-    lit.Diffuse = d3d::WHITE;
-    lit.Specular = d3d::WHITE * 0.9f;
-    lit.Ambient = d3d::WHITE * 0.9f;
+    lit.Diffuse = d3d::WHITE * 1.5f;
+    lit.Specular = d3d::WHITE * 1.3f;
+    lit.Ambient = d3d::WHITE * 1.3f;
     //lit.Position = D3DXVECTOR3(0.3f, 4.0f, -4.0f);
-    lit.Position = D3DXVECTOR3(0.0f, 3.0f, 0.0f); // 카메라보다 광원이 높게
-    lit.Range = 100.0f; // 빛이 닿는 거리 늘리기
+    lit.Position = D3DXVECTOR3(0.0f, 11.0f, 0.0f); // 카메라보다 광원이 높게
+    lit.Range = 120.0f; // 빛이 닿는 거리 늘리기
     lit.Attenuation0 = 0.0f;
-    lit.Attenuation1 = 0.9f; // 거리에 따른 빛 감소량을 감소
+    lit.Attenuation1 = 0.5f; // 거리에 따른 빛 감소량을 감소
     lit.Attenuation2 = 0.0f;
     /*lit.Type = D3DLIGHT_SPOT;
     lit.Diffuse = D3DXCOLOR(1.0f, 0.95f, 0.8f, 1.0f);
@@ -1036,7 +1036,7 @@ bool Display(float timeDelta)   // 매 프레임 실행
             D3DXVECTOR3 cueBallPos = g_sphere[3].getCenter();
             D3DXVECTOR3 blueBallPos = g_target_blueball.getCenter();
 
-            float lineY = TABLE_Y + M_RADIUS * 0.2f - 2.7;
+            float lineY = TABLE_Y + M_RADIUS * 0.2f - 10.7;
             cueBallPos.y = blueBallPos.y = lineY;
 
             D3DXVECTOR3 dir = blueBallPos - cueBallPos;
