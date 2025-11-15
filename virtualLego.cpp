@@ -61,7 +61,7 @@ bool isTurnStarted = false;
 int isWhiteTurn = 1; // 하얀공부터 시작하는 걸로
 int whiteScore = 0;
 int yellowScore = 0;
-int winScore = 10;
+int winScore = 1;
 int winner = 0;
 
 bool isInitBlue = false;
