@@ -21,6 +21,7 @@
 // #include <iostream>
 
 IDirect3DDevice9* Device = NULL;
+ID3DXFont* win_Font = NULL; // 승리 표시용 폰트 객체 추가
 ID3DXFont* g_pFont = NULL; // 점수 표시용 폰트 객체 추가
 bool showGuideLine = true;   // true면 조준선 표시
 
@@ -870,6 +871,23 @@ bool Setup()
         return false;
     }
 
+    // 승리 & 게임 종료 폰트 생성
+    D3DXFONT_DESC fontWin = {
+        50,
+        0,
+        FW_BOLD,
+        1,
+        FALSE,
+        DEFAULT_CHARSET,
+        OUT_DEFAULT_PRECIS,
+        DEFAULT_QUALITY,
+        DEFAULT_PITCH | FF_DONTCARE,
+        "Arial"                    // 폰트 이름
+    };
+    if (FAILED(D3DXCreateFontIndirect(Device, &fontWin, &win_Font))) {
+        return false;
+    }
+
 
     //// Position and aim the camera. : 카메라 설정
     //D3DXVECTOR3 pos(0.0f, 5.0f, -8.0f);
@@ -1259,6 +1277,30 @@ bool Display(float timeDelta)   // 매 프레임 실행
             else
                 g_pFont->DrawTextA(NULL, turnText, -1, &rectTurn, DT_NOCLIP, D3DXCOLOR(1.0f, 0.8f, 0.3f, 1.0f)); // 노란빛
         }
+
+
+        // 게임 종료 및 승자 표시
+        if (winner != 0) {
+            if (winner == 2) {
+                if (win_Font) {
+                    RECT winRect;
+                    SetRect(&winRect, 200, 300, 0, 0);
+                    char text[128];
+                    sprintf_s(text, "Game Over - Winner : %s", "yellow");
+                    win_Font->DrawTextA(NULL, text, -1, &winRect, DT_NOCLIP, D3DXCOLOR(1, 0, 0, 1));
+                }
+            }
+            else if (winner == 3) {
+                if (win_Font) {
+                    RECT winRect;
+                    SetRect(&winRect, 200, 300, 0, 0);
+                    char text[128];
+                    sprintf_s(text, "Game Over - Winner : %s", "white");
+                    win_Font->DrawTextA(NULL, text, -1, &winRect, DT_NOCLIP, D3DXCOLOR(1, 0, 0, 1));
+                }
+            }
+        }
+
 
 
         Device->EndScene();
